@@ -42,5 +42,5 @@ python tests/test_miniscreen.py
 ## Technique (résumé)
 
 - Modèle OpenAI avec appels outils / streaming selon les agents  
-- Recherche web : DuckDuckGo côté utils (`src/utils/web_search_tool.py`)  
+- Recherche web : Responses API / prompt enrichi (`src/agents/base_agent.py`)  
 - Températures et limites de tokens configurées dans `src/config/settings.py`

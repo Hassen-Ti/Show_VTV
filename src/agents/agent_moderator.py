@@ -4,16 +4,8 @@ Acts as a professional debate moderator, introducing topics, managing turns, and
 """
 
 from .base_agent import BaseAgent
+from utils.token_manager import token_manager
 
-# Import absolu pour éviter les erreurs de relative import
-try:
-    from utils.token_manager import token_manager
-except ImportError:
-    # Fallback si l'import absolu échoue
-    import sys
-    from pathlib import Path
-    sys.path.append(str(Path(__file__).parent.parent))
-    from utils.token_manager import token_manager
 
 class AgentModerator(BaseAgent):
     """Professional TV debate moderator agent"""

@@ -1,13 +1,20 @@
 import os
-import json
 from dotenv import load_dotenv
 from openai import OpenAI
+
+load_dotenv()
+
+_FACTUAL_SUFFIX = (
+    "\n\nIMPORTANT: Utilise tes connaissances les plus récentes (entraînement jusqu'en 2024). "
+    "Quand tu mentionnes des statistiques, études ou faits, précise toujours la source approximative "
+    "(ex: 'selon des études récentes', 'données 2024', etc). Sois factuel et cite des ordres de grandeur réalistes."
+)
+
 
 class BaseAgent:
     """Base class for AI agents using OpenAI API with native web search"""
     
     def __init__(self, model="gpt-4o", temperature=0.7, max_tokens=500):
-        load_dotenv()
         
         # Startup sanity check
         api_key = os.getenv("OPENAI_API_KEY")
@@ -18,6 +25,10 @@ class BaseAgent:
         self.model = model
         self.temperature = temperature
         self.max_tokens = max_tokens
+
+    @staticmethod
+    def _with_factual_suffix(system_prompt: str) -> str:
+        return system_prompt + _FACTUAL_SUFFIX
         
     def generate_response(self, user_input, system_prompt="You are a helpful AI assistant."):
         """Generate a response using OpenAI's Chat Completions API"""
@@ -49,10 +60,7 @@ class BaseAgent:
         GPT-4o can now search the web directly when needed
         """
         try:
-            # Add enhanced factual instruction (web search pas encore disponible)
-            enhanced_prompt = system_prompt + "\n\nIMPORTANT: Utilise tes connaissances les plus récentes (entraînement jusqu'en 2024). Quand tu mentionnes des statistiques, études ou faits, précise toujours la source approximative (ex: 'selon des études récentes', 'données 2024', etc). Sois factuel et cite des ordres de grandeur réalistes."
-            
-            # Notify UI that search might occur
+            enhanced_prompt = self._with_factual_suffix(system_prompt)
             if search_callback:
                 search_callback("🔍 AI peut rechercher sur le web si nécessaire...")
             
@@ -132,10 +140,7 @@ class BaseAgent:
         Generate a streaming response with native OpenAI web search capability
         """
         try:
-            # Add enhanced factual instruction (web search pas encore disponible)
-            enhanced_prompt = system_prompt + "\n\nIMPORTANT: Utilise tes connaissances les plus récentes (entraînement jusqu'en 2024). Quand tu mentionnes des statistiques, études ou faits, précise toujours la source approximative (ex: 'selon des études récentes', 'données 2024', etc). Sois factuel et cite des ordres de grandeur réalistes."
-            
-            # Notify UI that search might occur
+            enhanced_prompt = self._with_factual_suffix(system_prompt)
             if search_callback:
                 search_callback("🔍 Recherche web activée...")
             
@@ -143,8 +148,7 @@ class BaseAgent:
                 {"role": "system", "content": enhanced_prompt},
                 {"role": "user", "content": user_input}
             ]
-            
-            # Paramètres de streaming avec web search
+
             params = {
                 "model": self.model,
                 "messages": messages,
@@ -152,9 +156,7 @@ class BaseAgent:
                 "max_tokens": self.max_tokens,
                 "stream": True
             }
-            
-            # Web search natif pas encore disponible, on garde les instructions dans le prompt
-            
+
             stream = self.client.chat.completions.create(**params)
             
             full_response = ""

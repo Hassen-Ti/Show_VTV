@@ -1,16 +1,12 @@
 from .base_agent import BaseAgent
+from utils.token_manager import token_manager
+
 
 class Agent_two(BaseAgent):
     """Agent Sceptique Tech 2025 - Critique IA avec web search"""
     
     def __init__(self):
-        # Utiliser token_manager pour max_tokens si disponible
-        try:
-            from utils.token_manager import token_manager
-            max_tokens = token_manager.get_current_tokens()
-        except ImportError:
-            max_tokens = 250  # Fallback
-            
+        max_tokens = token_manager.get_current_tokens()
         super().__init__(model="gpt-4o", temperature=1.1, max_tokens=max_tokens)
         # Activer web search par défaut
         self.enable_web_search = True
