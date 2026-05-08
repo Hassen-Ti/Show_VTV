@@ -5,10 +5,11 @@ Utilise l'API Microlink pour afficher les vraies miniatures
 """
 
 import sys
+from pathlib import Path
 import requests
 from PyQt6.QtGui import QGuiApplication
 from PyQt6.QtQml import QQmlApplicationEngine
-from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot, QTimer, QThread
+from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot, QTimer, QThread, QUrl
 
 class ScreenshotWorker(QThread):
     """Thread pour capturer screenshots sans bloquer l'UI"""
@@ -149,8 +150,8 @@ def main():
     controller = DemoController()
     engine.rootContext().setContextProperty("demoController", controller)
     
-    qml_file = "test_miniscreen.qml"
-    engine.load(qml_file)
+    qml_file = Path(__file__).resolve().parent / "test_miniscreen.qml"
+    engine.load(QUrl.fromLocalFile(str(qml_file)))
     
     if not engine.rootObjects():
         print(f"Erreur: {qml_file} non trouve")
