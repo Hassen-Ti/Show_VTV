@@ -1,19 +1,27 @@
 """
 Test minimal : recherche web via l’API Responses OpenAI (clé dans `.env`).
+
+Script interactif — sous pytest (stdin non interactif), il se termine sans rien faire.
 """
 import os
+import sys
+
 from openai import OpenAI
 from dotenv import load_dotenv
 
 
 def test_web_search_simple():
+    if not sys.stdin.isatty():
+        print("SKIP: test interactif, lancer directement avec python.")
+        return
+
     load_dotenv()
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         print("Erreur: OPENAI_API_KEY absente du fichier .env")
         return
 
-    print(f"API Key chargée: {api_key[:20]}...")
+    print("OPENAI_API_KEY détectée (valeur non affichée).")
     client = OpenAI(api_key=api_key)
     print("Test web search — taper 'quit' pour sortir.")
 

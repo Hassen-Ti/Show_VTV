@@ -3,6 +3,7 @@ Agent Fact-Checker V2 - Vérifie vraiment les faits avec web search
 Version améliorée qui utilise réellement le web search pour vérifier
 """
 
+from config.settings import OPENAI_MODEL
 from .base_agent import BaseAgent
 import re
 import time
@@ -12,7 +13,7 @@ class AgentFactChecker(BaseAgent):
     
     def __init__(self):
         super().__init__(
-            model="gpt-4o",
+            model=OPENAI_MODEL,
             temperature=0.1,  # Très factuel, pas créatif
             max_tokens=300
         )

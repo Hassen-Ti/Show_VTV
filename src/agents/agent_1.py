@@ -1,15 +1,20 @@
+from config.debate_graph import get_persona_vector
+from config.settings import OPENAI_MODEL
 from .base_agent import BaseAgent
 from utils.token_manager import token_manager
 
 
 class Agent_one(BaseAgent):
-    """Agent Optimiste Tech 2025 - Pro-innovation IA avec web search"""
+    """Agent Optimiste — débat TV via LangGraph ReAct (outil search_web)."""
     
     def __init__(self):
         max_tokens = token_manager.get_current_tokens()
-        super().__init__(model="gpt-4o", temperature=1.1, max_tokens=max_tokens)
+        super().__init__(model=OPENAI_MODEL, temperature=1.1, max_tokens=max_tokens)
         # Activer web search par défaut
         self.enable_web_search = True
+
+    def get_persona_vector(self):
+        return get_persona_vector("optimiste")
         
     def get_system_prompt(self, token_limit=250):
         """Prompt système pour Agent 1 - Optimiste Tech 2025"""

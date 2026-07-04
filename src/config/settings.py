@@ -19,12 +19,20 @@ DEBATE_CONFIG = {
     "search_timeout_seconds": 15   # Timeout recherche web
 }
 
+# Modèle OpenAI principal (débat, modérateur, fact-check)
+OPENAI_MODEL = "gpt-5.4-nano-2026-03-17"
+
 # Configuration des agents
 AGENT_CONFIG = {
-    "model": "gpt-4o",
+    "model": OPENAI_MODEL,
     "temperature": 1.2,  # Créativité élevée pour débats passionnés
     "max_tokens": 150,   # Réponses concises et percutantes
     "stream_response": True
+}
+
+# LangGraph / create_agent : limite de récursion du graphe (tours agent + outils)
+REACT_CONFIG = {
+    "recursion_limit": 40,
 }
 
 # Prompts système améliorés

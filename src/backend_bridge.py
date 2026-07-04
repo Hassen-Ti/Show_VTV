@@ -97,7 +97,15 @@ class AgentWorkerModern(QThread):
     def _run_agent_turn(self, agent, stream_key, user_input, display_round, fact_label):
         history_context = self.format_history_for_agent(stream_key)
         tokens = token_manager.get_current_tokens()
-        full_prompt = f"{agent.get_system_prompt(tokens)}\n\n{history_context}"
+        if stream_key == "agent_one":
+            system_prompt = self.prompt_one
+        elif stream_key == "agent_two":
+            system_prompt = self.prompt_two
+        else:
+            system_prompt = agent.get_system_prompt(tokens)
+        user_message = (
+            f"{history_context}\n\n{user_input}" if history_context.strip() else user_input
+        )
 
         def stream_cb(chunk):
             self.messageStream.emit(stream_key, chunk, display_round)
@@ -105,11 +113,16 @@ class AgentWorkerModern(QThread):
         def search_cb(info):
             self.searchNotification.emit(stream_key, info)
 
-        response = agent.generate_streaming_response_with_search(
-            user_input,
-            full_prompt,
+        def step_cb(info):
+            self.searchNotification.emit(stream_key, info)
+
+        response = agent.generate_react_debate_turn(
+            user_message,
+            system_prompt,
             stream_callback=stream_cb,
             search_callback=search_cb,
+            step_callback=step_cb,
+            topic=self.topic,
         )
 
         if response.startswith("Error:"):
@@ -135,6 +148,7 @@ class AgentWorkerModern(QThread):
                     return
                 time.sleep(DEBATE_CONFIG["moderator_delay_seconds"])
 
+            last_response_two = None
             for round_num in range(DEBATE_CONFIG["max_rounds"]):
                 if self.should_stop:
                     break
@@ -156,7 +170,8 @@ class AgentWorkerModern(QThread):
                 user_one = (
                     self.topic
                     if round_num == 0
-                    else "Continuez le débat en répondant aux arguments précédents"
+                    else last_response_two
+                    or "Continuez le débat en répondant aux arguments précédents"
                 )
                 response_one = self._run_agent_turn(
                     self.agent_one,
@@ -190,6 +205,7 @@ class AgentWorkerModern(QThread):
                 )
                 if response_two is None:
                     return
+                last_response_two = response_two
 
                 if (
                     self.use_moderator

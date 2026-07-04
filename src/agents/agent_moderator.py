@@ -3,6 +3,7 @@ Agent Moderator - TV Show Host for AI Debates
 Acts as a professional debate moderator, introducing topics, managing turns, and synthesizing arguments
 """
 
+from config.settings import OPENAI_MODEL
 from .base_agent import BaseAgent
 from utils.token_manager import token_manager
 
@@ -13,7 +14,7 @@ class AgentModerator(BaseAgent):
     def __init__(self):
         # Moderator needs balanced settings
         super().__init__(
-            model="gpt-4o",
+            model=OPENAI_MODEL,
             temperature=0.8,  # Creative but controlled
             max_tokens=200    # Concise interventions
         )

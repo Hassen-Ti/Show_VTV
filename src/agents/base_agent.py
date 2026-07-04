@@ -2,6 +2,9 @@ import os
 from dotenv import load_dotenv
 from openai import OpenAI
 
+from config.settings import OPENAI_MODEL
+from utils.openai_completion import chat_token_kwargs
+
 load_dotenv()
 
 _FACTUAL_SUFFIX = (
@@ -14,7 +17,7 @@ _FACTUAL_SUFFIX = (
 class BaseAgent:
     """Base class for AI agents using OpenAI API with native web search"""
     
-    def __init__(self, model="gpt-4o", temperature=0.7, max_tokens=500):
+    def __init__(self, model=OPENAI_MODEL, temperature=0.7, max_tokens=500):
         
         # Startup sanity check
         api_key = os.getenv("OPENAI_API_KEY")
@@ -29,18 +32,25 @@ class BaseAgent:
     @staticmethod
     def _with_factual_suffix(system_prompt: str) -> str:
         return system_prompt + _FACTUAL_SUFFIX
+
+    def _chat_completion_kwargs(self, **extra):
+        """Kwargs communs pour ``chat.completions.create`` (GPT-5 → max_completion_tokens)."""
+        return {
+            "model": self.model,
+            "temperature": self.temperature,
+            **chat_token_kwargs(self.model, self.max_tokens),
+            **extra,
+        }
         
     def generate_response(self, user_input, system_prompt="You are a helpful AI assistant."):
         """Generate a response using OpenAI's Chat Completions API"""
         try:
             response = self.client.chat.completions.create(
-                model=self.model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_input}
                 ],
-                temperature=self.temperature,
-                max_tokens=self.max_tokens
+                **self._chat_completion_kwargs(),
             )
             
             # Extract the response content from the Chat Completion response
@@ -70,12 +80,9 @@ class BaseAgent:
             ]
             
             # Création des paramètres de base
-            params = {
-                "model": self.model,
-                "messages": messages,
-                "temperature": self.temperature,
-                "max_tokens": self.max_tokens
-            }
+            params = self._chat_completion_kwargs(
+                messages=messages,
+            )
             
             # Utiliser Responses API avec web search si activé
             if hasattr(self, 'enable_web_search') and self.enable_web_search:
@@ -106,19 +113,52 @@ class BaseAgent:
             
         except Exception as e:
             return f"Error: {str(e)}"
-    
+
+    def get_persona_vector(self):
+        """Vecteur personnage ONPC ; surchargé par les sous-classes."""
+        from config.debate_graph import get_persona_vector
+
+        return get_persona_vector("optimiste")
+
+    def generate_react_debate_turn(
+        self,
+        user_input,
+        system_prompt="You are a helpful AI assistant.",
+        stream_callback=None,
+        search_callback=None,
+        step_callback=None,
+        topic="",
+    ):
+        """
+        Tour de débat : graphe LangGraph débatteur ONPC (voir `agents.react.graph`).
+        """
+        from agents.react.executor import run_react_turn
+
+        return run_react_turn(
+            client=self.client,
+            model=self.model,
+            temperature=self.temperature,
+            max_tokens=self.max_tokens,
+            system_prompt=self._with_factual_suffix(system_prompt),
+            user_input=user_input,
+            enable_web_search=getattr(self, "enable_web_search", False),
+            stream_callback=stream_callback,
+            search_callback=search_callback,
+            step_callback=step_callback,
+            persona_vector=self.get_persona_vector(),
+            topic=topic,
+        )
+
     def generate_streaming_response(self, user_input, system_prompt="You are a helpful AI assistant.", callback=None):
         """Generate a streaming response using OpenAI's Chat Completions API"""
         try:
             stream = self.client.chat.completions.create(
-                model=self.model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_input}
                 ],
-                temperature=self.temperature,
-                max_tokens=self.max_tokens,
-                stream=True
+                stream=True,
+                **self._chat_completion_kwargs(),
             )
             
             full_response = ""
@@ -149,15 +189,10 @@ class BaseAgent:
                 {"role": "user", "content": user_input}
             ]
 
-            params = {
-                "model": self.model,
-                "messages": messages,
-                "temperature": self.temperature,
-                "max_tokens": self.max_tokens,
-                "stream": True
-            }
-
-            stream = self.client.chat.completions.create(**params)
+            stream = self.client.chat.completions.create(
+                stream=True,
+                **self._chat_completion_kwargs(messages=messages),
+            )
             
             full_response = ""
             for chunk in stream:

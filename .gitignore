@@ -3,7 +3,9 @@
 .env.local
 .env.*.local
 
-# Python
+# Python / uv
+.venv/
+.pytest_cache/
 __pycache__/
 *.py[cod]
 *$py.class
@@ -18,7 +20,8 @@ venv.bak/
 dist/
 build/
 
-# Local tooling (Claude Code / Cursor project junk)
+# Cursor / Claude — config locale uniquement (ne pas versionner)
+.cursor/
 .claude/
 
 # IDE
@@ -40,6 +43,9 @@ logs/
 
 # Scripts de test jetables à la racine uniquement (les tests suivis sont dans tests/)
 /test_*.py
+
+# Artefacts de run (export JSON du show)
+/show_result.json
 
 # Temporary files
 *.tmp

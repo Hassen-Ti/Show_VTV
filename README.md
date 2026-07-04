@@ -2,19 +2,34 @@
 
 Application PyQt6 avec deux agents GPT qui débattent, recherche web et interface QML (`ModernDebateInterface`).
 
-## Installation
+## Installation (uv + `.venv/`)
+
+Installer [uv](https://docs.astral.sh/uv/getting-started/), puis à la racine du dépôt (le dossier qui contient `pyproject.toml` et `uv.lock`) :
 
 ```bash
-pip install -r requirements.txt
+uv sync
 ```
+
+Éviter `pip install` global : les dépendances sont gérées par `pyproject.toml` et le venv créé sous `.venv/`.
+
+Extras optionnels :
+
+- LangGraph + export JPG du graphe — `uv sync --extra langgraph-example`
+- `scripts/create_avatars.py` — `uv sync --extra avatars`
+
+Les deux : `uv sync --extra langgraph-example --extra avatars`
 
 Copier `.env.example` vers `.env` et renseigner `OPENAI_API_KEY`.
 
 ## Lancer l’app
 
+`uv run` utilise le venv du projet (`.venv/`).
+
 ```bash
-python main.py
+uv run python main.py
 ```
+
+Si tu préfères activer le venv à la main : sous Windows PowerShell, `.venv\Scripts\Activate.ps1` puis `python main.py`.
 
 Le code applicatif vit sous `src/` (agents, config, QML, pont `backend_bridge.py`).
 
@@ -34,9 +49,9 @@ Le code applicatif vit sous `src/` (agents, config, QML, pont `backend_bridge.py
 ## Tests manuels
 
 ```bash
-python tests/test_factcheck.py
-python tests/test_web_search_openai.py
-python tests/test_miniscreen.py
+uv run python tests/test_factcheck.py
+uv run python tests/test_web_search_openai.py
+uv run python tests/test_miniscreen.py
 ```
 
 ## Technique (résumé)
