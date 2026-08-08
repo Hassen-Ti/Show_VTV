@@ -22,7 +22,8 @@ def test_each_domain_compiles_with_its_own_sequence():
         guest = make_guest("cerebral", domain, "spécialité", 0.5, agent_id="g")
         compiled = build_guest_subgraph(guest)
         names = _node_names(compiled)
-        assert set(spec["cognitive_sequence"]) <= names, domain
+        assert spec["evidence_node"] in names, domain
+        assert spec["think_node"] in names, domain
         assert COMMON_TAIL <= names, domain
 
 

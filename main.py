@@ -1,29 +1,30 @@
 #!/usr/bin/env python3
 """
-AI Show V.TV — point d'entrée : interface QML + pont Python (`src/`).
+AI Show V.TV — point d'entrée : interface QML + moteur show (`src/show/`).
 """
 
-import sys
 import os
+import sys
 from pathlib import Path
+
+from PyQt6.QtCore import QUrl
 from PyQt6.QtGui import QGuiApplication
 from PyQt6.QtQml import QQmlApplicationEngine
-from PyQt6.QtCore import QUrl
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
-from backend_bridge import BackendBridgeModern
+from backend_bridge import ShowBridge
 
 
 def main():
-    os.environ["QT_QUICK_CONTROLS_STYLE"] = "Basic"
+    os.environ.setdefault("QT_QUICK_CONTROLS_STYLE", "Basic")
 
     app = QGuiApplication(sys.argv)
     app.setApplicationName("AI Show V.TV")
     app.setOrganizationName("AI Debate Systems")
 
     engine = QQmlApplicationEngine()
-    backend = BackendBridgeModern()
+    backend = ShowBridge()
     engine.rootContext().setContextProperty("backend", backend)
 
     qml_file = Path(__file__).resolve().parent / "src" / "ui" / "qml" / "ModernDebateInterface.qml"
@@ -36,19 +37,7 @@ def main():
         print("Erreur: Impossible de charger l'interface QML")
         sys.exit(1)
 
-    assets_path = Path(__file__).resolve().parent / "src" / "ui" / "assets"
-    required_assets = [
-        "versus.png",
-        "avatar_blue.gif",
-        "avatar_red.gif",
-        "avatar_blue_static.png",
-        "avatar_red_static.png",
-    ]
-    missing = [a for a in required_assets if not (assets_path / a).exists()]
-    if missing:
-        print(f"Attention: assets manquants: {missing}")
-
-    print("AI Show V.TV — lancement (Ctrl+C dans le terminal ne suffit pas : fermer la fenêtre)")
+    print("AI Show V.TV — lancement (fermez la fenêtre pour quitter)")
     sys.exit(app.exec())
 
 

@@ -260,3 +260,82 @@ def monologue_prompt(persona: PersonaVector, mind: MindState, topic: str, final:
         f"<on_air>Je viens de dire : {final}</on_air>\n"
         f"<private_state>rancunes: {'; '.join(mind['grudges']) or '(aucune)'}</private_state>"
     )
+
+
+PLAN_SYSTEM = (
+    BASE
+    + """
+<task>Planifie les étapes de raisonnement pour ce tour de débat (phase Plan-and-Execute).</task>
+<output_contract>
+- 3 lignes numérotées en français, chaque ligne = une étape concrète.
+- Pas de markdown, pas de préambule.
+</output_contract>
+"""
+)
+
+REFLECT_SYSTEM = (
+    BASE
+    + """
+<task>Critique le brouillon d'argument (pattern Reflexion) : failles, répétitions, angles manqués.</task>
+<output_contract>
+- 2 phrases en français, ton analytique, première personne.
+</output_contract>
+"""
+)
+
+CRITIC_SYSTEM = (
+    BASE
+    + """
+<task>Évalue la solidité de l'argument interne (Verifier-Critic / Self-RAG).</task>
+<output_contract>
+- Exactly 2 lines:
+  VERDICT: pass|revise
+  SCORE: <0-10>
+</output_contract>
+"""
+)
+
+CORRECT_SYSTEM = (
+    BASE
+    + """
+<task>Corrige le brouillon : éliminer les faiblesses, renforcer la logique, garder la voix du personnage.</task>
+<output_contract>
+- Brouillon corrigé en 3-5 phrases, prose seulement.
+</output_contract>
+"""
+)
+
+
+def plan_prompt(persona: PersonaVector, mind: MindState, topic: str, turn: dict) -> str:
+    return (
+        f"{persona_identity(persona, mind, topic)}\n"
+        f"<debate_state>Claim: {turn.get('claim', topic)}\nFaille: {turn.get('weakness', '')}</debate_state>\n"
+        "<step_order>1. Lister 3 étapes : perception, preuve, argument.</step_order>"
+    )
+
+
+def reflect_prompt(persona: PersonaVector, mind: MindState, topic: str, draft: str) -> str:
+    return (
+        f"{persona_identity(persona, mind, topic)}\n"
+        f"<draft>{draft}</draft>\n"
+        "<step_order>Critiquer honnêtement ce brouillon avant diffusion.</step_order>"
+    )
+
+
+def critic_prompt(persona: PersonaVector, mind: MindState, topic: str, turn: dict) -> str:
+    return (
+        f"{persona_identity(persona, mind, topic)}\n"
+        f"<angle>{turn.get('angle', '')}</angle>\n"
+        f"<draft>{turn.get('draft', '')}</draft>\n"
+        "<step_order>Évaluer rigueur, nouveauté, ancrage preuves.</step_order>"
+    )
+
+
+def correct_prompt(persona: PersonaVector, mind: MindState, topic: str, draft: str, reflection: str) -> str:
+    return (
+        f"{persona_identity(persona, mind, topic)}\n"
+        f"<draft>{draft}</draft>\n"
+        f"<critique>{reflection or '(aucune)'}</critique>\n"
+        "<step_order>Produire version corrigée du brouillon.</step_order>"
+    )
+

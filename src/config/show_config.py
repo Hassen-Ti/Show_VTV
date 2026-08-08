@@ -1,6 +1,6 @@
-"""Constantes du moteur de show à personas (voir docs/superpowers/specs/2026-07-02)."""
+"""Constantes du moteur de show à personas."""
 
-from config.settings import OPENAI_MODEL
+OPENAI_MODEL = "gpt-5.4-nano-2026-03-17"
 
 SHOW_CONFIG = {
     "model_internal": OPENAI_MODEL,
@@ -9,14 +9,16 @@ SHOW_CONFIG = {
     "delivery_max_tokens": 200,
     "recursion_limit": 250,
     "enable_web_search": True,
+    "reasoning_effort": "none",
+    "max_rounds": 3,
 }
 
 # Algorithmes mind
-DRIFT_LR = 0.15               # vitesse de dérive d'opinion
-CONCEDE_THRESHOLD = 0.75      # persuasion au-delà de laquelle on concède
-AROUSAL_DECAY = 0.85          # décroissance émotionnelle par round
-VALENCE_RECOVERY = 0.2        # retour de la valence vers la baseline par round
-HIGH_AROUSAL = 0.75           # seuil "à chaud" : répliques sèches, tactiques agressives
+DRIFT_LR = 0.15
+CONCEDE_THRESHOLD = 0.75
+AROUSAL_DECAY = 0.85
+VALENCE_RECOVERY = 0.2
+HIGH_AROUSAL = 0.75
 
 # Tension du plateau
 TENSION_AROUSAL_WEIGHT = 0.6

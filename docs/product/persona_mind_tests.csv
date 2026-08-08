@@ -1,0 +1,16 @@
+persona_id,personality,domain,stance_revision_delta,concedes_under_pressure,concedes_randomly,voice_temp_delta,sentence_max_hot,sentence_max_cold
+provocateur_physicien,provocateur,physicien,0.0026,True,False,0.096,2,2
+provocateur_historien,provocateur,historien,0.0026,True,False,0.096,2,2
+provocateur_philosophe,provocateur,philosophe,0.0026,True,False,0.096,2,2
+provocateur_ecrivain,provocateur,ecrivain,0.0026,True,False,0.096,2,2
+provocateur_economiste,provocateur,economiste,0.0026,True,False,0.096,2,2
+diplomate_physicien,diplomate,physicien,0.0153,True,False,0.036,3,3
+diplomate_historien,diplomate,historien,0.0153,True,False,0.036,3,3
+diplomate_philosophe,diplomate,philosophe,0.0153,True,False,0.036,3,3
+diplomate_ecrivain,diplomate,ecrivain,0.0153,True,False,0.036,3,3
+diplomate_economiste,diplomate,economiste,0.0153,True,False,0.036,3,3
+cerebral_physicien,cerebral,physicien,0.0076,True,False,0.054,3,3
+cerebral_historien,cerebral,historien,0.0076,True,False,0.054,3,3
+cerebral_philosophe,cerebral,philosophe,0.0076,True,False,0.054,3,3
+cerebral_ecrivain,cerebral,ecrivain,0.0076,True,False,0.054,3,3
+cerebral_economiste,cerebral,economiste,0.0076,True,False,0.054,3,3

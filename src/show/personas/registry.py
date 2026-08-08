@@ -1,13 +1,20 @@
-"""Matrice personnalité × domaine et fabrique d'invités.
+"""Matrice personnalité × domaine × architecture agentique.
 
 La personnalité pilote le caractère (émotions, tactiques, résistance) ;
-le domaine pilote la cognition (séquence de nœuds, style de preuve, lexique).
+le domaine pilote le lexique et le style de preuve ;
+l'architecture pilote la topologie LangGraph (workflow agentique publié).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
+from show.personas.architectures import (
+    ARCHITECTURE_IDS,
+    PERSONALITY_ARCHITECTURE,
+    cognitive_sequence_for,
+    get_architecture,
+)
 from show.personas.vector import PersonaVector, validate
 
 # Caractère : comment la personne réagit et attaque.
@@ -23,6 +30,8 @@ PERSONALITIES: dict[str, dict] = {
         "temperature_facts": 0.4,
         "temperature_voice": 1.3,
         "voice_hint": "cassant, ironique, cherche le clash frontal",
+        "architecture_id": "react",
+        "conclave_role": "Le Flux",
     },
     "diplomate": {
         "affective_baseline": 0.3,
@@ -35,6 +44,8 @@ PERSONALITIES: dict[str, dict] = {
         "temperature_facts": 0.4,
         "temperature_voice": 1.0,
         "voice_hint": "posé, chaleureux, désamorce puis retourne l'argument",
+        "architecture_id": "reflexion",
+        "conclave_role": "Le Protocole",
     },
     "cerebral": {
         "affective_baseline": 0.0,
@@ -47,44 +58,83 @@ PERSONALITIES: dict[str, dict] = {
         "temperature_facts": 0.3,
         "temperature_voice": 0.9,
         "voice_hint": "précis, froid, démonte la logique pièce par pièce",
+        "architecture_id": "plan_execute",
+        "conclave_role": "L'Archive",
     },
 }
 
-# Cognition : comment la personne pense — séquence de nœuds du graphe.
+# Domaine : lexique + style de preuve (plus de séquence cognitive figée).
 DOMAINS: dict[str, dict] = {
     "physicien": {
-        "cognitive_sequence": ("listen", "verify_facts", "hypothesize", "strategize"),
         "evidence_style": "empirical",
         "domain_label": "physicien",
         "lexicon_hint": "ordres de grandeur, incertitudes, données mesurées, protocole",
+        "think_node": "hypothesize",
+        "evidence_node": "verify_facts",
     },
     "historien": {
-        "cognitive_sequence": ("listen", "recall_precedent", "build_analogy", "strategize"),
         "evidence_style": "precedent",
         "domain_label": "historien",
         "lexicon_hint": "précédents, périodes, causes longues, archives",
+        "think_node": "build_analogy",
+        "evidence_node": "recall_precedent",
     },
     "philosophe": {
-        "cognitive_sequence": ("listen", "reframe_concept", "find_contradiction", "strategize"),
         "evidence_style": "dialectic",
         "domain_label": "philosophe",
         "lexicon_hint": "concepts, présupposés, distinctions, contradictions internes",
+        "think_node": "find_contradiction",
+        "evidence_node": "reframe_concept",
     },
     "ecrivain": {
-        "cognitive_sequence": ("listen", "recall_anecdote", "narrative_frame", "strategize"),
         "evidence_style": "narrative",
         "domain_label": "écrivain",
         "lexicon_hint": "récits, personnages, images, détails sensibles",
+        "think_node": "narrative_frame",
+        "evidence_node": "recall_anecdote",
     },
     "economiste": {
-        "cognitive_sequence": ("listen", "quantify", "model_tradeoff", "strategize"),
         "evidence_style": "formal",
         "domain_label": "économiste",
         "lexicon_hint": "coûts, incitations, arbitrages, élasticités, agrégats",
+        "think_node": "model_tradeoff",
+        "evidence_node": "quantify",
     },
 }
 
 DEFAULT_FORBIDDEN = ("insulte", "injure", "attaque personnelle")
+
+
+def _resolve_cognitive_sequence(
+    architecture_id: str,
+    domain: str,
+    *,
+    override: str | None = None,
+) -> tuple[str, ...]:
+    """Construit la séquence cognitive : architecture + nœuds domaine."""
+    if override:
+        return cognitive_sequence_for(override)
+
+    spec = get_architecture(architecture_id)
+    d = DOMAINS[domain]
+    evidence = d["evidence_node"]
+    think = d["think_node"]
+
+    if spec.uses_supervisor:
+        return ("listen", "supervisor_route", "strategize")
+
+    path: list[str] = []
+    for node in spec.cognitive_path:
+        if node == "verify_facts":
+            path.append(evidence)
+        elif node == "hypothesize":
+            path.append(think)
+        else:
+            path.append(node)
+
+    if "strategize" not in path:
+        path.append("strategize")
+    return tuple(path)
 
 
 def make_guest(
@@ -96,8 +146,9 @@ def make_guest(
     agent_id: str,
     name: str = "",
     conviction: float = 0.8,
+    architecture_id: str | None = None,
 ) -> PersonaVector:
-    """Compose un invité personnalité × domaine. Lève ValueError sur clé inconnue."""
+    """Compose un invité personnalité × domaine × architecture."""
     if personality not in PERSONALITIES:
         raise ValueError(
             f"personnalité inconnue: {personality!r} (choix: {sorted(PERSONALITIES)})"
@@ -107,13 +158,20 @@ def make_guest(
 
     p = PERSONALITIES[personality]
     d = DOMAINS[domain]
+    arch = architecture_id or p["architecture_id"]
+    if arch not in ARCHITECTURE_IDS:
+        raise ValueError(f"architecture inconnue: {arch!r}")
+
+    cog_seq = _resolve_cognitive_sequence(arch, domain)
+
     vector = PersonaVector(
         name=name or f"{personality.capitalize()} {d['domain_label']}",
         agent_id=agent_id,
         personality=personality,
         domain=domain,
         specialization=specialization,
-        cognitive_sequence=tuple(d["cognitive_sequence"]),
+        architecture_id=arch,
+        cognitive_sequence=cog_seq,
         evidence_style=d["evidence_style"],
         affective_baseline=p["affective_baseline"],
         arousal_gain=p["arousal_gain"],
@@ -132,6 +190,28 @@ def make_guest(
     return vector
 
 
+def make_guest_with_architecture(
+    personality: str,
+    domain: str,
+    specialization: str,
+    stance: float,
+    architecture_id: str,
+    *,
+    agent_id: str,
+    name: str = "",
+) -> PersonaVector:
+    """Fabrique un invité en forçant une architecture (benchmark / A-B test)."""
+    return make_guest(
+        personality,
+        domain,
+        specialization,
+        stance,
+        agent_id=agent_id,
+        name=name,
+        architecture_id=architecture_id,
+    )
+
+
 def persona_style_hints(vector: PersonaVector) -> tuple[str, str]:
     """(voice_hint, lexicon_hint) pour les prompts — dérivés du registre."""
     return (
@@ -146,13 +226,13 @@ class ModeratorPersona:
     agent_id: str
     style: str
     signature: str
-    interject_threshold: float  # tension au-delà de laquelle il s'interpose
+    interject_threshold: float
     sentence_max: int
     temperature: float
 
 
 MODERATOR_PERSONA = ModeratorPersona(
-    name="L'Animateur",
+    name="Mr Bullshit",
     agent_id="moderator",
     style=(
         "animateur de débat TV français, incisif mais élégant : il résume, "

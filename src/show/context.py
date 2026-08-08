@@ -9,8 +9,12 @@ from typing import Any, Callable, Optional
 from openai import OpenAI
 
 # Événement émis vers le runner : {"type": "turn"|"moderator"|"inner_monologue"|
-# "stance_update"|"step", ...}
+# "stance_update"|"step"|"earpiece", ...}
 EmitCallback = Callable[[dict[str, Any]], None]
+
+# Sonde régie → oreillette : renvoie la consigne en attente (et la consomme), ou None.
+EarpiecePoll = Callable[[], Optional[str]]
+EarpiecePeek = Callable[[], bool]
 
 
 @dataclass
@@ -22,9 +26,26 @@ class ShowContext:
     model_delivery: str = ""
     enable_web_search: bool = True
     emit: Optional[EmitCallback] = None
+    poll_earpiece: Optional[EarpiecePoll] = None
+    peek_earpiece: Optional[EarpiecePeek] = None
+    trace_llm_cursor: Optional[Callable[[], int]] = None
     rng: Callable[[], float] = field(default=random.random)
 
 
 def emit_event(context: ShowContext, event: dict[str, Any]) -> None:
     if context.emit:
         context.emit(event)
+
+
+def drain_earpiece(context: ShowContext) -> str:
+    """Consigne du producteur en attente dans l'oreillette du modérateur ('' sinon)."""
+    if context.poll_earpiece is None:
+        return ""
+    return (context.poll_earpiece() or "").strip()
+
+
+def has_earpiece(context: ShowContext) -> bool:
+    """True si un message spectateur attend d'être lu par le modérateur."""
+    if context.peek_earpiece is not None:
+        return context.peek_earpiece()
+    return False

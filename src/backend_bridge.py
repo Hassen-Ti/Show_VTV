@@ -1,372 +1,309 @@
 """
-Pont Python ↔ QML : débat avec historique, délais et fact-checking.
+Pont Python ↔ QML : exécute le moteur show (LangGraph) et traduit les événements en signaux Qt.
 """
 
+from __future__ import annotations
+
+import os
+import threading
 import time
+from typing import Any, Optional
 
-from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot, QThread
+from dotenv import load_dotenv
+from openai import OpenAI
+from PyQt6.QtCore import QObject, QThread, pyqtSignal, pyqtSlot
 
-from agents.agent_1 import Agent_one
-from agents.agent_2 import Agent_two
-from agents.agent_moderator import AgentModerator
-from agents.agent_factchecker import AgentFactChecker
-from config.settings import DEBATE_CONFIG
-from config.personas import get_persona, get_available_domains
-from config.topics import get_topic_for_domain
-from utils.token_manager import token_manager
+from config.show_config import SHOW_CONFIG
+from config.show_presets import PRESET_KEYS, build_guests, get_preset, guest_names
+from show import llm
+from show.graph.show_graph import run_show
 
-_AGENT_LABEL = {"agent_one": "Agent One", "agent_two": "Agent Two"}
+_AGENT_UI = {"guest_a": "agent_one", "guest_b": "agent_two"}
+_STREAM_DELAY = 0.03
+_MAX_EARPIECE_QUEUE = 3
 
 
-class AgentWorkerModern(QThread):
-    """Worker : boucle de débat avec historique et fact-checking."""
+class ShowStopped(Exception):
+    """Le worker a demandé l'arrêt du show en cours."""
 
+
+class ShowWorker(QThread):
     messageStream = pyqtSignal(str, str, int)
     messageComplete = pyqtSignal(str, str, int)
-    searchNotification = pyqtSignal(str, str)
-    factCheckResult = pyqtSignal(str, str)
+    searchStarted = pyqtSignal(str, str)
+    backstageUpdate = pyqtSignal(str)
+    audienceQuestionQueued = pyqtSignal(str)
+    audienceQuestionRead = pyqtSignal(str)
     errorOccurred = pyqtSignal(str)
     finished = pyqtSignal()
 
     def __init__(
         self,
-        agent_one,
-        agent_two,
-        moderator,
-        fact_checker,
-        topic,
-        prompt_one,
-        prompt_two,
-        use_moderator=True,
+        topic: str,
+        preset_key: str,
+        client: OpenAI,
+        *,
+        initial_earpiece: str = "",
     ):
         super().__init__()
-        self.agent_one = agent_one
-        self.agent_two = agent_two
-        self.moderator = moderator
-        self.fact_checker = fact_checker
         self.topic = topic
-        self.prompt_one = prompt_one
-        self.prompt_two = prompt_two
-        self.use_moderator = use_moderator
+        self.preset_key = preset_key
+        self.client = client
         self.should_stop = False
-        self.debate_history = []
+        self._earpiece_lock = threading.Lock()
+        self._earpiece_queue: list[str] = []
+        if initial_earpiece.strip():
+            self._earpiece_queue.append(initial_earpiece.strip())
 
-    def stop(self):
-        self.should_stop = True
+    def submit_earpiece(self, text: str) -> bool:
+        """Ajoute une question spectateur (max 3 en file). Renvoie False si file pleine."""
+        cleaned = text.strip()
+        if not cleaned:
+            return False
+        with self._earpiece_lock:
+            if len(self._earpiece_queue) >= _MAX_EARPIECE_QUEUE:
+                return False
+            self._earpiece_queue.append(cleaned)
+        self.audienceQuestionQueued.emit(cleaned)
+        return True
 
-    def add_to_history(self, round_num, agent_type, message, message_type="response"):
-        self.debate_history.append(
-            {
-                "round": round_num,
-                "agent": agent_type,
-                "message": message,
-                "type": message_type,
-                "timestamp": time.time(),
-            }
-        )
+    def _peek_earpiece(self) -> bool:
+        with self._earpiece_lock:
+            return len(self._earpiece_queue) > 0
 
-    def format_history_for_agent(self, current_agent):
-        if not self.debate_history:
-            return ""
-
-        lines = ["🎬 HISTORIQUE DU DÉBAT (pour référence):\n"]
-        for entry in self.debate_history[-8:]:
-            agent_name = {
-                "moderator": "🎙️ ANIMATEUR",
-                "agent_one": "🔥 ADVERSAIRE" if current_agent == "agent_two" else "🔥 VOUS",
-                "agent_two": "💀 ADVERSAIRE" if current_agent == "agent_one" else "💀 VOUS",
-            }.get(entry["agent"], entry["agent"])
-            lines.append(f"[Round {entry['round']}] {agent_name}: {entry['message']}\n")
-
-        lines.append("\n🎯 RÉPONDEZ MAINTENANT en tenant compte de cet historique!")
-        return "".join(lines)
-
-    def stream_moderator_message(self, message, round_num=0):
-        """Effet « frappe » avec un signal par mot (moins de charge que caractère par caractère)."""
-        words = message.split()
-        for i, word in enumerate(words):
-            if self.should_stop:
-                break
-            chunk = word + (" " if i < len(words) - 1 else "")
-            self.messageStream.emit("moderator", chunk, round_num)
-            time.sleep(0.03)
-
-        self.messageComplete.emit("moderator", message, round_num)
-        self.add_to_history(round_num, "moderator", message, "moderation")
-
-    def _run_agent_turn(self, agent, stream_key, user_input, display_round, fact_label):
-        history_context = self.format_history_for_agent(stream_key)
-        tokens = token_manager.get_current_tokens()
-        if stream_key == "agent_one":
-            system_prompt = self.prompt_one
-        elif stream_key == "agent_two":
-            system_prompt = self.prompt_two
-        else:
-            system_prompt = agent.get_system_prompt(tokens)
-        user_message = (
-            f"{history_context}\n\n{user_input}" if history_context.strip() else user_input
-        )
-
-        def stream_cb(chunk):
-            self.messageStream.emit(stream_key, chunk, display_round)
-
-        def search_cb(info):
-            self.searchNotification.emit(stream_key, info)
-
-        def step_cb(info):
-            self.searchNotification.emit(stream_key, info)
-
-        response = agent.generate_react_debate_turn(
-            user_message,
-            system_prompt,
-            stream_callback=stream_cb,
-            search_callback=search_cb,
-            step_callback=step_cb,
-            topic=self.topic,
-        )
-
-        if response.startswith("Error:"):
-            self.errorOccurred.emit(f"{_AGENT_LABEL[stream_key]}: {response}")
+    def _poll_earpiece(self) -> Optional[str]:
+        with self._earpiece_lock:
+            if self._earpiece_queue:
+                return self._earpiece_queue.pop(0)
             return None
 
-        self.messageComplete.emit(stream_key, response, display_round)
-        self.add_to_history(display_round, stream_key, response)
+    def stop(self) -> None:
+        self.should_stop = True
 
-        if self.fact_checker:
-            fact_result = self.fact_checker.quick_fact_check(response, fact_label)
-            self.factCheckResult.emit(stream_key, fact_result)
+    def _check_stop(self) -> None:
+        if self.should_stop:
+            raise ShowStopped()
 
-        time.sleep(DEBATE_CONFIG["response_delay_seconds"])
-        return response
+    def _ui_agent(self, agent_id: str) -> str:
+        return _AGENT_UI.get(agent_id, agent_id)
 
-    def run(self):
+    def _stream_message(self, ui_agent: str, text: str, round_num: int) -> None:
+        words = text.split()
+        for i, word in enumerate(words):
+            self._check_stop()
+            chunk = word + (" " if i < len(words) - 1 else "")
+            self.messageStream.emit(ui_agent, chunk, round_num)
+            time.sleep(_STREAM_DELAY)
+        self.messageComplete.emit(ui_agent, text, round_num)
+
+    def _handle_event(self, event: dict[str, Any]) -> None:
+        self._check_stop()
+        kind = event["type"]
+
+        if kind == "moderator":
+            self._stream_message("moderator", event["text"], int(event.get("round", 0)))
+            return
+
+        if kind == "turn":
+            ui_agent = self._ui_agent(event["agent"])
+            self._stream_message(ui_agent, event["text"], int(event.get("round", 0)))
+            return
+
+        if kind == "step":
+            ui_agent = self._ui_agent(event["agent"])
+            label = event.get("label", event.get("step", ""))
+            self.searchStarted.emit(ui_agent, label)
+            return
+
+        if kind == "inner_monologue":
+            ui_agent = self._ui_agent(event["agent"])
+            self.backstageUpdate.emit(f"💭 {ui_agent} — {event['text']}")
+            return
+
+        if kind == "earpiece":
+            self.audienceQuestionRead.emit(event["text"])
+            return
+
+        if kind == "stance_update":
+            tension = event.get("tension", 0.0)
+            stances = event.get("stances", {})
+            parts = [f"{aid}: {v:+.2f}" for aid, v in stances.items()]
+            self.backstageUpdate.emit(
+                f"📊 Tension {tension:.2f} | positions {', '.join(parts)}"
+            )
+
+    def run(self) -> None:
         try:
-            if self.use_moderator:
-                intro = self.moderator.introduce_debate(self.topic)
-                self.stream_moderator_message(intro, 0)
-                if self.should_stop:
-                    return
-                time.sleep(DEBATE_CONFIG["moderator_delay_seconds"])
+            guest_a, guest_b = build_guests(self.preset_key)
 
-            last_response_two = None
-            for round_num in range(DEBATE_CONFIG["max_rounds"]):
-                if self.should_stop:
-                    break
-                display_round = round_num + 1
+            def emit(event: dict[str, Any]) -> None:
+                self._handle_event(event)
 
-                if self.use_moderator:
-                    floor_msg = self.moderator.give_floor_to_agent(
-                        "Agent One 🔥",
-                        is_first=(round_num == 0),
-                        previous_argument=self.debate_history[-1]["message"]
-                        if self.debate_history
-                        else None,
-                    )
-                    self.stream_moderator_message(floor_msg, display_round)
-                    if self.should_stop:
-                        break
-                    time.sleep(1)
-
-                user_one = (
-                    self.topic
-                    if round_num == 0
-                    else last_response_two
-                    or "Continuez le débat en répondant aux arguments précédents"
-                )
-                response_one = self._run_agent_turn(
-                    self.agent_one,
-                    "agent_one",
-                    user_one,
-                    display_round,
-                    "Agent 1 🔥",
-                )
-                if response_one is None:
-                    return
-                if self.should_stop:
-                    break
-
-                if self.use_moderator:
-                    floor_msg = self.moderator.give_floor_to_agent(
-                        "Agent Two 💀",
-                        is_first=False,
-                        previous_argument=response_one,
-                    )
-                    self.stream_moderator_message(floor_msg, display_round)
-                    if self.should_stop:
-                        break
-                    time.sleep(1)
-
-                response_two = self._run_agent_turn(
-                    self.agent_two,
-                    "agent_two",
-                    response_one,
-                    display_round,
-                    "Agent 2 💀",
-                )
-                if response_two is None:
-                    return
-                last_response_two = response_two
-
-                if (
-                    self.use_moderator
-                    and display_round % 2 == 0
-                    and round_num < DEBATE_CONFIG["max_rounds"] - 1
-                ):
-                    if self.should_stop:
-                        break
-                    interjection = self.moderator.interject_or_summarize(
-                        response_one, response_two, display_round
-                    )
-                    self.stream_moderator_message(interjection, display_round)
-                    time.sleep(DEBATE_CONFIG["moderator_delay_seconds"])
-
-            if self.use_moderator and not self.should_stop:
-                conclusion = self.moderator.conclude_debate(
-                    f"Débat passionnant sur: {self.topic}"
-                )
-                self.stream_moderator_message(conclusion, DEBATE_CONFIG["max_rounds"] + 1)
-
+            run_show(
+                self.topic,
+                guest_a,
+                guest_b,
+                max_rounds=int(SHOW_CONFIG["max_rounds"]),
+                client=self.client,
+                enable_web_search=bool(SHOW_CONFIG.get("enable_web_search", True)),
+                emit=emit,
+                poll_earpiece=self._poll_earpiece,
+                peek_earpiece=self._peek_earpiece,
+            )
             self.finished.emit()
-
+        except ShowStopped:
+            self.finished.emit()
         except Exception as e:
-            self.errorOccurred.emit(f"Erreur worker: {str(e)}")
+            self.errorOccurred.emit(str(e))
+            self.finished.emit()
 
 
 class ThemeGenerationWorker(QThread):
     themeReady = pyqtSignal(str)
     failed = pyqtSignal(str)
 
-    def __init__(self, moderator, user_topic: str):
+    def __init__(self, user_topic: str):
         super().__init__()
-        self._moderator = moderator
         self._topic = user_topic
 
-    def run(self):
+    def run(self) -> None:
         try:
-            theme = self._moderator.generate_debate_theme(self._topic)
-            self.themeReady.emit(theme)
+            theme = llm.think(
+                SHOW_CONFIG["model_internal"],
+                "Tu es un animateur de débat télévisé professionnel.",
+                (
+                    f'Thème général : "{self._topic}"\n\n'
+                    "Génère UNE question de débat spécifique, controversée et actuelle. "
+                    "Réponds uniquement avec la question, sans introduction."
+                ),
+                temperature=0.8,
+                max_tokens=120,
+            )
+            self.themeReady.emit(theme.strip())
         except Exception as e:
             self.failed.emit(str(e))
 
 
-class BackendBridgeModern(QObject):
+class ShowBridge(QObject):
     """Backend exposé à QML."""
 
     messageStreamReceived = pyqtSignal(str, str, int)
     messageCompleted = pyqtSignal(str, str, int)
     searchStarted = pyqtSignal(str, str)
-    factCheckUpdate = pyqtSignal(str, str)
+    backstageUpdate = pyqtSignal(str)
+    audienceQuestionQueued = pyqtSignal(str)
+    audienceQuestionRead = pyqtSignal(str)
     errorOccurred = pyqtSignal(str)
     debateFinished = pyqtSignal()
     debateStatusChanged = pyqtSignal(bool)
     themeGenerated = pyqtSignal(str)
-    personasAvailable = pyqtSignal(list)
 
     def __init__(self):
         super().__init__()
-        try:
-            self.agent_one = Agent_one()
-            self.agent_two = Agent_two()
-            self.moderator = AgentModerator()
-            self.fact_checker = AgentFactChecker()
-        except ValueError as e:
-            print(f"Erreur initialisation agents: {e}")
-            raise
-
-        self.worker = None
-        self._theme_worker = None
+        load_dotenv()
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY manquant — copiez .env.example vers .env")
+        self._client = OpenAI(api_key=api_key)
+        self._worker: Optional[ShowWorker] = None
+        self._theme_worker: Optional[ThemeGenerationWorker] = None
         self.is_running = False
-        self.current_domain = None
+        self._pending_earpiece_lock = threading.Lock()
+        self._pending_earpiece_queue: list[str] = []
 
     @pyqtSlot(str)
-    def generateTheme(self, user_topic):
-        self._theme_worker = ThemeGenerationWorker(self.moderator, user_topic)
+    def generateTheme(self, user_topic: str) -> None:
+        self._theme_worker = ThemeGenerationWorker(user_topic)
         self._theme_worker.themeReady.connect(self.themeGenerated.emit)
         self._theme_worker.failed.connect(
-            lambda err: self.errorOccurred.emit(f"Erreur génération thème: {err}")
+            lambda err: self.errorOccurred.emit(f"Erreur génération thème : {err}")
         )
         self._theme_worker.start()
 
     @pyqtSlot(str, result=bool)
-    def setPersonaDomain(self, domain):
-        if domain in get_available_domains():
-            self.current_domain = domain
-            return True
-        return False
+    def submitAudienceQuestion(self, text: str) -> bool:
+        """Question du public → oreillette du modérateur (avant ou pendant le direct)."""
+        cleaned = text.strip()
+        if not cleaned:
+            return False
 
-    @pyqtSlot(str, str, str, bool, str)
-    def startDebate(self, topic, prompt_one="", prompt_two="", use_moderator=True, domain=""):
+        if self.is_running and self._worker:
+            return self._worker.submit_earpiece(cleaned)
+
+        with self._pending_earpiece_lock:
+            if len(self._pending_earpiece_queue) >= _MAX_EARPIECE_QUEUE:
+                return False
+            self._pending_earpiece_queue.append(cleaned)
+        self.audienceQuestionQueued.emit(cleaned)
+        return True
+
+    @pyqtSlot(str, str)
+    def startDebate(self, topic: str, preset_key: str = "") -> None:
         if self.is_running:
             return
 
-        if domain and domain in get_available_domains():
-            persona_opt = get_persona(domain, "optimiste")
-            persona_skep = get_persona(domain, "sceptique")
-            if persona_opt and persona_skep:
-                prompt_one = persona_opt["prompt"]
-                prompt_two = persona_skep["prompt"]
-                domain_topic = get_topic_for_domain(domain)
-                if domain_topic:
-                    topic = domain_topic["question"]
+        preset = get_preset(preset_key or "")
+        final_topic = topic.strip() or preset.topic
+        with self._pending_earpiece_lock:
+            pending = list(self._pending_earpiece_queue)
+            self._pending_earpiece_queue.clear()
+        initial_earpiece = pending[0] if pending else ""
 
-        if not topic:
-            topic = "Devons-nous faire confiance à l'IA en 2025?"
-        if not prompt_one:
-            prompt_one = self.agent_one.get_system_prompt()
-        if not prompt_two:
-            prompt_two = self.agent_two.get_system_prompt()
-
-        self.worker = AgentWorkerModern(
-            self.agent_one,
-            self.agent_two,
-            self.moderator,
-            self.fact_checker,
-            topic,
-            prompt_one,
-            prompt_two,
-            use_moderator,
+        self._worker = ShowWorker(
+            final_topic,
+            preset_key or "",
+            self._client,
+            initial_earpiece=initial_earpiece,
         )
+        for extra in pending[1:]:
+            self._worker.submit_earpiece(extra)
+        self._worker.messageStream.connect(self.messageStreamReceived)
+        self._worker.messageComplete.connect(self.messageCompleted)
+        self._worker.searchStarted.connect(self.searchStarted)
+        self._worker.backstageUpdate.connect(self.backstageUpdate)
+        self._worker.audienceQuestionQueued.connect(self.audienceQuestionQueued)
+        self._worker.audienceQuestionRead.connect(self.audienceQuestionRead)
+        self._worker.errorOccurred.connect(self.errorOccurred)
+        self._worker.finished.connect(self._on_debate_finished)
 
-        self.worker.messageStream.connect(self.messageStreamReceived)
-        self.worker.messageComplete.connect(self.messageCompleted)
-        self.worker.searchNotification.connect(self.searchStarted)
-        self.worker.factCheckResult.connect(self.factCheckUpdate)
-        self.worker.errorOccurred.connect(self.errorOccurred)
-        self.worker.finished.connect(self.onDebateFinished)
+        if initial_earpiece:
+            self.audienceQuestionQueued.emit(initial_earpiece)
 
-        self.worker.start()
+        self._worker.start()
         self.is_running = True
         self.debateStatusChanged.emit(True)
 
     @pyqtSlot()
-    def stopDebate(self):
-        if self.worker and self.worker.isRunning():
-            self.worker.stop()
-            self.worker.wait(5000)
+    def stopDebate(self) -> None:
+        if self._worker and self._worker.isRunning():
+            self._worker.stop()
+            finished = self._worker.wait(15000)
+            if not finished and self.is_running:
+                # LLM in-flight can outlive the cooperative stop; unlock UI so restart works.
+                self.is_running = False
+                self.debateStatusChanged.emit(False)
+                self.errorOccurred.emit(
+                    "Arrêt demandé — le tour en cours peut encore finir en arrière-plan."
+                )
+
+    def _on_debate_finished(self) -> None:
+        if self.is_running:
             self.is_running = False
             self.debateStatusChanged.emit(False)
-
-    def onDebateFinished(self):
-        self.is_running = False
-        self.debateStatusChanged.emit(False)
         self.debateFinished.emit()
 
     @pyqtSlot(result=str)
-    def getDefaultTopic(self):
-        return "Devons-nous faire confiance à l'IA pour les diagnostics médicaux?"
+    def getDefaultTopic(self) -> str:
+        return get_preset("").topic
 
     @pyqtSlot(result=str)
-    def getDefaultUserTopic(self):
-        return "Intelligence artificielle et société"
+    def getDefaultUserTopic(self) -> str:
+        return get_preset("").theme_hint
 
-    @pyqtSlot(result=str)
-    def getOptimisticPrompt(self):
-        return "Tu es un fervent optimiste technologique..."
-
-    @pyqtSlot(result=str)
-    def getCautiousPrompt(self):
-        return "Tu es un sceptique technologique féroce..."
+    @pyqtSlot(str, result="QVariantMap")
+    def getGuestNames(self, preset_key: str) -> dict:
+        return guest_names(preset_key or "")
 
     @pyqtSlot(result=list)
-    def getAvailablePersonas(self):
-        return get_available_domains()
+    def getPresetKeys(self) -> list:
+        return PRESET_KEYS

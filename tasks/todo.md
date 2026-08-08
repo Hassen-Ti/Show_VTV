@@ -1,46 +1,46 @@
-# Tasks
+# Étude produit V.TV Le Conclave (10 itérations)
 
-## 2026-07-02 — Moteur de show TV à personas agentiques
+- [x] Audit codebase + benchmark web (itérations 1–4)
+- [x] Fusion vision « Conclave » + manifeste (itérations 5–6)
+- [x] Spec design + GTM + roadmap (itérations 7–9)
+- [x] Synthèse finale + `docs/product/VTV_PRODUCT_SPEC.md` (itération 10)
 
-Plan : `docs/superpowers/specs/2026-07-02-show-persona-engine-design.md`
+## Review produit
 
-- [x] Spec de design (modules, algorithmes, diagrammes)
-- [x] `PersonaVector` + validation stricte (`src/show/personas/vector.py`)
-- [x] Registre 3 personnalités × 5 domaines + `make_guest` + `MODERATOR_PERSONA`
-- [x] `ShowState` / `MindState` / `TranscriptEntry` avec reducer transcript
-- [x] Algorithmes mind : dérive d'opinion, appraisal émotionnel, tension, concession
-- [x] `NODE_REGISTRY` : listen, nœuds preuve/pensée par domaine, strategize, draft/voice/deliver
-- [x] Sous-graphe invité dynamique (cognitive_sequence → topologie) + branche concession
-- [x] Show graph : modérateur (open/allocate/interject/conclude), routage tension/rounds
-- [x] Runner CLI headless + événements + export JSON
-- [x] Tests : registre, mind purs, topologies, smoke show complet avec LLM mocké
+- Produit retenu : **V.TV Le Conclave** (score 9.6/10 après stress-test)
+- 10 simulations : coût, latence, desktop, jargon, VoxArena, éducation, oreillette, /proc, fiabilité
+- Changements v1.1 : progressive disclosure, texte-first, replay HTML P1.5, mode dégradé
+- Prochaine implémentation : tension + coulisses lite + robustesse, puis TTS opt-in
 
-### Review
+---
 
-- 20 nouveaux tests passent, 14 tests existants du pipeline débatteur inchangés et verts.
-- Piège rencontré : un sous-graphe compilé renvoie l'état complet ; avec le reducer
-  `operator.add` sur `transcript`, les entrées héritées du parent étaient dupliquées.
-  Corrigé en enveloppant chaque sous-graphe (`_make_guest_node`) pour ne renvoyer que
-  le delta (transcript ajouté, minds, turn).
-- `src/agents/`, `backend_bridge.py` et l'UI QML non touchés (périmètre respecté).
+# Architecture Lab — viewer traces
 
-## 2026-07-04 — Review & ship (pré-PR)
+- [x] `TraceRecorder` + `ArchitectureTrace` (`src/show/personas/trace.py`)
+- [x] Benchmark avec traces (`run_architecture_benchmark_with_traces`)
+- [x] Viewer HTML `docs/product/architecture_lab.html` + `architecture_traces.json`
+- [x] Tests pytest traces + génération HTML
 
-- [x] Revue complète du diff (2 subagents : `agents/react` + `src/show`)
-- [x] Fix critique : contrat bridge ↔ `extract_turn_inputs` — le suffixe
-  « en tenant compte de cet historique! » polluait `opponent_last`
-- [x] Fix critique : `topic` stable passé du bridge au graphe (plus de blob historique)
-- [x] Fix critique : agent one rounds 2+ reçoit la vraie réplique d'agent two
-  au lieu de l'instruction générique
-- [x] `debate_history` injecté dans le prompt de `draft_argument`
-- [x] Runner show : `--rounds` validé, spec invité tolère les `:` dans la spécialisation
-- [x] `test_web_search_openai.py` ne bloque plus pytest (skip si stdin non interactif)
-- [x] `.gitignore` : `.pytest_cache/`, `/show_result.json`
-- [x] Suite verte : 38 passed
+## Review
 
-### Review
+- Ouvrir : `uv run python scripts/generate_architecture_viewer.py`
+- Chaque nœud du graphe : **Input** (turn + mind + show) · **LLM** (system/user/response) · **Output** (delta)
+- ShowState initial + final en bas ; filtre par agent (guest_a / guest_b)
 
-- Restent en WARNING (non bloquants, notés pour plus tard) : streaming simulé après
-  exécution du graphe (UX), température agent ignorée par le graphe, `llm.think` du show
-  n'utilise pas le client injecté, recherche web quasi systématique en rebuttal
-  (rhetoric `journalist`).
+---
+
+# Mode spectateur + oreillette du modérateur
+
+## Plan
+
+- [x] Moteur : `has_earpiece` + `drain_earpiece` dans le graphe (ouverture + interjections)
+- [x] Bridge : file thread-safe, `submitAudienceQuestion`, signaux Qt
+- [x] UI : mode spectateur par défaut, champ « Poser une question au plateau », toggle Régie
+- [x] Tests : smoke earpiece + preview mock + pytest vert (24 passed)
+
+## Review
+
+- Oreillette branchée sur l'infrastructure existante (`poll_earpiece` / `peek_earpiece` dans `ShowContext`).
+- Question avant le direct : lue à l'ouverture par Mr Bullshit ; en direct : priorité dans `moderator_interject`.
+- UI spectateur : régie masquée, coulisses off, bandeau PUBLIC + bouton RÉGIE discret en masthead.
+- File max 3 questions ; signaux `audienceQuestionQueued` / `audienceQuestionRead` pour l'état visuel.

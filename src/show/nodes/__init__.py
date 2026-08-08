@@ -6,10 +6,20 @@ from show.nodes.factories import (
     NodeFn,
     STEP_LABELS,
     make_concede_then_refute,
+    make_critic_verify,
     make_evidence_node,
     make_listen,
+    make_parallel_gather,
+    make_plan,
+    make_recall_memory,
+    make_reflect,
+    make_revise_draft,
+    make_self_correct,
     make_strategize,
+    make_supervisor_route,
     make_think_node,
+    route_critic_gate,
+    route_supervisor,
 )
 
 NODE_REGISTRY: dict[str, NodeFactory] = {
@@ -26,6 +36,15 @@ NODE_REGISTRY: dict[str, NodeFactory] = {
     "recall_anecdote": make_think_node("recall_anecdote"),
     "narrative_frame": make_think_node("narrative_frame"),
     "model_tradeoff": make_think_node("model_tradeoff"),
+    # architectures agentiques (patterns publiés)
+    "plan": make_plan,
+    "reflect": make_reflect,
+    "revise_draft": make_revise_draft,
+    "critic_verify": make_critic_verify,
+    "self_correct": make_self_correct,
+    "recall_memory": make_recall_memory,
+    "supervisor_route": make_supervisor_route,
+    "parallel_gather": make_parallel_gather,
     # stratégie et branche de caractère
     "strategize": make_strategize,
     "concede_then_refute": make_concede_then_refute,

@@ -8,7 +8,7 @@ Topologie :
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
@@ -16,7 +16,7 @@ from openai import OpenAI
 
 from config.show_config import SHOW_CONFIG
 from show import llm, mind as mind_algo
-from show.context import EmitCallback, ShowContext, emit_event
+from show.context import EarpiecePeek, EarpiecePoll, EmitCallback, ShowContext, drain_earpiece, emit_event
 from show.graph.guest_subgraph import build_guest_subgraph
 from show.nodes import prompts
 from show.personas.registry import MODERATOR_PERSONA, ModeratorPersona
@@ -73,17 +73,31 @@ def build_show_graph(
     guest_a: PersonaVector,
     guest_b: PersonaVector,
     moderator: ModeratorPersona = MODERATOR_PERSONA,
+    *,
+    peek_earpiece: Optional[EarpiecePeek] = None,
 ):
     guests = (guest_a, guest_b)
 
     def moderator_open(state: ShowState, runtime: Runtime[ShowContext]) -> dict:
+        audience = drain_earpiece(runtime.context)
+        audience_clause = ""
+        if audience:
+            audience_clause = (
+                f" Avant de commencer, un téléspectateur nous écrit : « {audience} ». "
+                "Mentionne-le brièvement à l'antenne et promets d'y revenir pendant le débat."
+            )
+            emit_event(
+                runtime.context,
+                {"type": "earpiece", "phase": "opening", "text": audience},
+            )
         text = _moderator_say(
             runtime.context,
             moderator,
             f"Ouvre le débat sur « {state['topic']} ». Présente les deux invités : "
             f"{guest_a.name} ({guest_a.domain}, spécialiste de {guest_a.specialization}) et "
             f"{guest_b.name} ({guest_b.domain}, spécialiste de {guest_b.specialization}). "
-            "Pose l'enjeu, crée l'attente.",
+            "Pose l'enjeu, crée l'attente."
+            + audience_clause,
         )
         entry = _moderator_entry({**state, "round": 0}, text, moderator)
         emit_event(runtime.context, {"type": "moderator", "round": 0, "text": text})
@@ -144,6 +158,8 @@ def build_show_graph(
         round_complete = state["turn_index"] % 2 == 0
         if round_complete and state["round"] >= state["max_rounds"]:
             return "moderator_conclude"
+        if round_complete and peek_earpiece and peek_earpiece():
+            return "moderator_interject"
         if round_complete and (
             state["tension"] > moderator.interject_threshold or state["round"] % 2 == 0
         ):
@@ -151,16 +167,30 @@ def build_show_graph(
         return "moderator_allocate_floor"
 
     def moderator_interject(state: ShowState, runtime: Runtime[ShowContext]) -> dict:
-        last_guests = [e for e in state["transcript"] if e["role"] == "guest"][-2:]
-        exchange = "\n".join(f"{e['speaker_name']}: {e['text']}" for e in last_guests)
-        heat = "Le ton monte, calme le jeu sans éteindre le débat." if state[
-            "tension"
-        ] > moderator.interject_threshold else "Relance le débat en pointant le vrai désaccord."
-        text = _moderator_say(
-            runtime.context,
-            moderator,
-            f"Dernier échange :\n{exchange}\nTension du plateau : {state['tension']:.2f}. {heat}",
-        )
+        audience = drain_earpiece(runtime.context)
+        if audience:
+            emit_event(
+                runtime.context,
+                {"type": "earpiece", "phase": "live", "text": audience},
+            )
+            text = _moderator_say(
+                runtime.context,
+                moderator,
+                f"Un message nous parvient du public : « {audience} ». "
+                "Lis-le à l'antenne avec tes mots, reformule-le clairement, "
+                "puis relance le débat en demandant aux invités d'y répondre.",
+            )
+        else:
+            last_guests = [e for e in state["transcript"] if e["role"] == "guest"][-2:]
+            exchange = "\n".join(f"{e['speaker_name']}: {e['text']}" for e in last_guests)
+            heat = "Le ton monte, calme le jeu sans éteindre le débat." if state[
+                "tension"
+            ] > moderator.interject_threshold else "Relance le débat en pointant le vrai désaccord."
+            text = _moderator_say(
+                runtime.context,
+                moderator,
+                f"Dernier échange :\n{exchange}\nTension du plateau : {state['tension']:.2f}. {heat}",
+            )
         entry = _moderator_entry(state, text, moderator)
         emit_event(
             runtime.context, {"type": "moderator", "round": state["round"], "text": text}
@@ -213,7 +243,7 @@ def build_show_graph(
             "moderator_interject": "moderator_interject",
             "moderator_conclude": "moderator_conclude",
         },
-    )
+    )  # route_after_update : oreillette via peek_earpiece (closure)
     graph.add_edge("moderator_interject", "moderator_allocate_floor")
     graph.add_edge("moderator_conclude", END)
     return graph.compile()
@@ -228,9 +258,12 @@ def run_show(
     client: Optional[OpenAI] = None,
     enable_web_search: bool = True,
     emit: Optional[EmitCallback] = None,
+    poll_earpiece: Optional[EarpiecePoll] = None,
+    peek_earpiece: Optional[EarpiecePeek] = None,
+    trace_llm_cursor: Optional[Callable[[], int]] = None,
 ) -> dict[str, Any]:
     """Exécute un show complet et retourne le ShowState final."""
-    compiled = build_show_graph(guest_a, guest_b)
+    compiled = build_show_graph(guest_a, guest_b, peek_earpiece=peek_earpiece)
     state = initial_show_state(topic, [guest_a, guest_b], max_rounds)
     context = ShowContext(
         client=client,
@@ -238,6 +271,9 @@ def run_show(
         model_delivery=SHOW_CONFIG["model_delivery"],
         enable_web_search=enable_web_search and client is not None,
         emit=emit,
+        poll_earpiece=poll_earpiece,
+        peek_earpiece=peek_earpiece,
+        trace_llm_cursor=trace_llm_cursor,
     )
     return compiled.invoke(
         state,

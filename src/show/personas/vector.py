@@ -40,6 +40,14 @@ COGNITIVE_NODES = frozenset(
         "quantify",
         "model_tradeoff",
         "strategize",
+        "plan",
+        "reflect",
+        "revise_draft",
+        "critic_verify",
+        "self_correct",
+        "recall_memory",
+        "supervisor_route",
+        "parallel_gather",
     }
 )
 
@@ -56,7 +64,8 @@ class PersonaVector:
     personality: str
     domain: str
     specialization: str
-    # cognition — structure du graphe
+    architecture_id: str
+    # cognition — topologie LangGraph (dérivée de architecture_id + domaine)
     cognitive_sequence: tuple[str, ...]
     evidence_style: str
     # caractère — modulation des prompts et des algorithmes
@@ -90,13 +99,23 @@ def validate(vector: PersonaVector) -> None:
 
     if not vector.cognitive_sequence:
         errors.append("cognitive_sequence vide")
-    unknown_nodes = set(vector.cognitive_sequence) - COGNITIVE_NODES
+    unknown_nodes = set(vector.cognitive_sequence) - COGNITIVE_NODES - frozenset(
+        {"concede_then_refute", "draft", "voice", "deliver"}
+    )
     if unknown_nodes:
         errors.append(f"nœuds cognitifs inconnus: {sorted(unknown_nodes)}")
-    if vector.cognitive_sequence and vector.cognitive_sequence[0] != "listen":
-        errors.append("cognitive_sequence doit commencer par 'listen'")
+    if vector.cognitive_sequence:
+        valid_starts = ("listen", "recall_memory")
+        if vector.cognitive_sequence[0] not in valid_starts:
+            errors.append(
+                f"cognitive_sequence doit commencer par {valid_starts}, "
+                f"reçu {vector.cognitive_sequence[0]!r}"
+            )
     if vector.cognitive_sequence and vector.cognitive_sequence[-1] != "strategize":
         errors.append("cognitive_sequence doit finir par 'strategize'")
+
+    if not vector.architecture_id:
+        errors.append("champ vide: architecture_id")
 
     if vector.evidence_style not in EVIDENCE_STYLES:
         errors.append(f"evidence_style inconnu: {vector.evidence_style}")

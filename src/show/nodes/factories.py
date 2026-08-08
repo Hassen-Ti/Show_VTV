@@ -13,7 +13,7 @@ from typing import Callable
 
 from langgraph.runtime import Runtime
 
-from agents.react.nodes.common import first_allowed_tactic, parse_labeled_lines
+from show.parsing import first_allowed_tactic, parse_labeled_lines
 from config.show_config import HIGH_AROUSAL, SHOW_CONFIG
 from show import llm, mind as mind_algo
 from show.context import ShowContext, emit_event
@@ -37,6 +37,14 @@ STEP_LABELS = {
     "quantify": "chiffre le problème",
     "model_tradeoff": "pèse l'arbitrage",
     "strategize": "choisit sa tactique",
+    "plan": "établit un plan",
+    "reflect": "réfléchit sur son brouillon",
+    "revise_draft": "révise le brouillon",
+    "critic_verify": "vérifie la solidité",
+    "self_correct": "corrige son argument",
+    "recall_memory": "rappelle ses souvenirs",
+    "supervisor_route": "route vers un worker",
+    "parallel_gather": "collecte preuves en parallèle",
     "concede_then_refute": "concède avant de contrer",
     "draft": "construit son argument",
     "voice": "met en voix",
@@ -244,3 +252,158 @@ def make_concede_then_refute(persona: PersonaVector) -> NodeFn:
         }
 
     return concede_then_refute
+
+
+def make_plan(persona: PersonaVector) -> NodeFn:
+    def plan(state: ShowState, runtime: Runtime[ShowContext]) -> dict:
+        _notify(runtime, persona, "plan")
+        mind = state["minds"][persona.agent_id]
+        text = llm.think(
+            runtime.context.model_internal or SHOW_CONFIG["model_internal"],
+            prompts.PLAN_SYSTEM,
+            prompts.plan_prompt(persona, mind, state["topic"], state["turn"]),
+            temperature=persona.temperature_facts,
+        )
+        return {"turn": {**state["turn"], "plan": text}}
+
+    return plan
+
+
+def make_reflect(persona: PersonaVector) -> NodeFn:
+    def reflect(state: ShowState, runtime: Runtime[ShowContext]) -> dict:
+        _notify(runtime, persona, "reflect")
+        mind = state["minds"][persona.agent_id]
+        draft = state["turn"].get("draft", "")
+        text = llm.think(
+            runtime.context.model_internal or SHOW_CONFIG["model_internal"],
+            prompts.REFLECT_SYSTEM,
+            prompts.reflect_prompt(persona, mind, state["topic"], draft),
+            temperature=persona.temperature_facts,
+        )
+        return {"turn": {**state["turn"], "reflection": text}}
+
+    return reflect
+
+
+def make_revise_draft(persona: PersonaVector) -> NodeFn:
+    def revise_draft(state: ShowState, runtime: Runtime[ShowContext]) -> dict:
+        _notify(runtime, persona, "revise_draft")
+        mind = state["minds"][persona.agent_id]
+        text = llm.think(
+            runtime.context.model_internal or SHOW_CONFIG["model_internal"],
+            prompts.CORRECT_SYSTEM,
+            prompts.correct_prompt(
+                persona, mind, state["topic"],
+                state["turn"].get("draft", ""),
+                state["turn"].get("reflection", ""),
+            ),
+            temperature=persona.temperature_facts,
+        )
+        return {"turn": {**state["turn"], "draft": text or state["turn"].get("draft", "")}}
+
+    return revise_draft
+
+
+def make_critic_verify(persona: PersonaVector) -> NodeFn:
+    def critic_verify(state: ShowState, runtime: Runtime[ShowContext]) -> dict:
+        _notify(runtime, persona, "critic_verify")
+        mind = state["minds"][persona.agent_id]
+        text = llm.think(
+            runtime.context.model_internal or SHOW_CONFIG["model_internal"],
+            prompts.CRITIC_SYSTEM,
+            prompts.critic_prompt(persona, mind, state["topic"], state["turn"]),
+            temperature=0.2,
+        )
+        parsed = parse_labeled_lines(text, ["VERDICT", "SCORE"])
+        verdict = (parsed.get("verdict") or "pass").strip().lower()
+        try:
+            score = float((parsed.get("score") or "7").strip().split()[0]) / 10.0
+        except (ValueError, IndexError):
+            score = 0.7
+        critic_pass = verdict == "pass" and score >= 0.6
+        return {
+            "turn": {
+                **state["turn"],
+                "critic_verdict": verdict,
+                "critic_score": score,
+                "critic_pass": critic_pass,
+            }
+        }
+
+    return critic_verify
+
+
+def make_self_correct(persona: PersonaVector) -> NodeFn:
+    def self_correct(state: ShowState, runtime: Runtime[ShowContext]) -> dict:
+        _notify(runtime, persona, "self_correct")
+        mind = state["minds"][persona.agent_id]
+        text = llm.think(
+            runtime.context.model_internal or SHOW_CONFIG["model_internal"],
+            prompts.CORRECT_SYSTEM,
+            prompts.correct_prompt(
+                persona, mind, state["topic"],
+                state["turn"].get("draft", ""),
+                state["turn"].get("reflection", ""),
+            ),
+            temperature=persona.temperature_facts,
+        )
+        return {"turn": {**state["turn"], "draft": text or state["turn"].get("draft", "")}}
+
+    return self_correct
+
+
+def make_recall_memory(persona: PersonaVector) -> NodeFn:
+    def recall_memory(state: ShowState, runtime: Runtime[ShowContext]) -> dict:
+        _notify(runtime, persona, "recall_memory")
+        mind = state["minds"][persona.agent_id]
+        memory = {
+            "beliefs": mind["beliefs"][-5:],
+            "grudges": mind["grudges"][-3:],
+            "inner_monologue": mind["inner_monologue"],
+        }
+        return {"turn": {**state["turn"], "memory_context": memory}}
+
+    return recall_memory
+
+
+def make_supervisor_route(persona: PersonaVector) -> NodeFn:
+    def supervisor_route(state: ShowState, runtime: Runtime[ShowContext]) -> dict:
+        _notify(runtime, persona, "supervisor_route")
+        mind = state["minds"][persona.agent_id]
+        # Worker dialectique si clash émotionnel, sinon worker preuve.
+        worker = "dialectic" if mind["arousal"] > 0.5 or state["turn"].get("persuasion", 0) > 0.6 else "evidence"
+        return {"turn": {**state["turn"], "worker": worker}}
+
+    return supervisor_route
+
+
+def make_parallel_gather(persona: PersonaVector) -> NodeFn:
+    """Simule un DAG parallèle : deux requêtes preuve fusionnées (LLMCompiler-inspired)."""
+
+    def parallel_gather(state: ShowState, runtime: Runtime[ShowContext]) -> dict:
+        _notify(runtime, persona, "parallel_gather")
+        ctx = runtime.context
+        if not ctx.enable_web_search or ctx.client is None:
+            return {"turn": {**state["turn"], "evidence": ""}}
+        claim = state["turn"].get("claim", state["topic"])
+        queries = [
+            f"données chiffrées récentes 2025 : {claim} ({persona.specialization})",
+            f"coûts et impacts chiffrés 2025 : {state['topic']}",
+        ]
+        chunks = []
+        for q in queries:
+            result = llm.search(ctx.client, ctx.model_internal or SHOW_CONFIG["model_internal"], q)
+            if result and not result.startswith("Erreur"):
+                chunks.append(result)
+        merged = "\n---\n".join(chunks)
+        return {"turn": {**state["turn"], "evidence": merged, "evidence_query": " | ".join(queries)}}
+
+    return parallel_gather
+
+
+def route_supervisor(state: ShowState) -> str:
+    return state["turn"].get("worker", "evidence")
+
+
+def route_critic_gate(state: ShowState) -> str:
+    return "voice" if state["turn"].get("critic_pass") else "revise_draft"
