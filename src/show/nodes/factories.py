@@ -72,23 +72,31 @@ def make_listen(persona: PersonaVector) -> NodeFn:
         _notify(runtime, persona, "listen")
         mind = state["minds"][persona.agent_id]
         opponent = last_guest_entry(state, exclude=persona.agent_id)
+        audience_question = (state.get("pending_audience_question") or "").strip()
+        # Consumed here so allocate_floor's empty turn does not drop the earpiece item.
+        clear_pending = {"pending_audience_question": ""} if audience_question else {}
 
         if opponent is None:
             # Premier tour : pas de réplique adverse, on cadre le sujet.
-            return {
-                "turn": {
-                    "claim": state["topic"],
-                    "weakness": "cadrage du sujet encore ouvert — imposer sa lecture",
-                    "attack": "none",
-                    "persuasion": 0.0,
-                    "must_concede": False,
-                }
+            turn = {
+                "claim": state["topic"],
+                "weakness": "cadrage du sujet encore ouvert — imposer sa lecture",
+                "attack": "none",
+                "persuasion": 0.0,
+                "must_concede": False,
             }
+            if audience_question:
+                turn["audience_question"] = audience_question
+            return {"turn": turn, **clear_pending}
 
         text = llm.think(
             runtime.context.model_internal or SHOW_CONFIG["model_internal"],
             prompts.LISTEN_SYSTEM,
-            prompts.listen_prompt(opponent["text"], state["topic"]),
+            prompts.listen_prompt(
+                opponent["text"],
+                state["topic"],
+                audience_question=audience_question,
+            ),
             temperature=persona.temperature_facts,
         )
         parsed = parse_labeled_lines(text, ["CLAIM", "WEAKNESS", "ATTACK", "SCORE"])
@@ -110,15 +118,19 @@ def make_listen(persona: PersonaVector) -> NodeFn:
             mind["beliefs"] = mind["beliefs"] + [parsed.get("claim", "")]
 
         must_concede = mind_algo.should_concede(persuasion, persona, runtime.context.rng())
+        turn = {
+            "claim": parsed.get("claim") or opponent["text"][:200],
+            "weakness": parsed.get("weakness") or "contradiction non exposée",
+            "attack": attack,
+            "persuasion": persuasion,
+            "must_concede": must_concede,
+        }
+        if audience_question:
+            turn["audience_question"] = audience_question
         return {
             "minds": {**state["minds"], persona.agent_id: mind},
-            "turn": {
-                "claim": parsed.get("claim") or opponent["text"][:200],
-                "weakness": parsed.get("weakness") or "contradiction non exposée",
-                "attack": attack,
-                "persuasion": persuasion,
-                "must_concede": must_concede,
-            },
+            "turn": turn,
+            **clear_pending,
         }
 
     return listen

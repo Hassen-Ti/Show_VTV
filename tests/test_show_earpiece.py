@@ -55,10 +55,66 @@ def test_earpiece_opening_and_live(monkeypatch):
     assert "peaux foncées" in earpiece_events[0]["text"]
 
 
+def test_live_earpiece_reaches_next_guest_prompt(monkeypatch):
+    """After a live drain, the next guest listen/draft must see the spectator question."""
+    captured: list[str] = []
+
+    def capturing_think(model, system, user, *, temperature, max_tokens=None):
+        captured.append(user)
+        return fake_think(model, system, user, temperature=temperature, max_tokens=max_tokens)
+
+    monkeypatch.setattr(show.llm, "think", capturing_think)
+    monkeypatch.setattr(show.llm, "search", lambda client, model, query: "Preuve simulée 2025.")
+
+    guest_a = make_guest("provocateur", "physicien", "quantique", 0.8, agent_id="guest_a")
+    guest_b = make_guest("diplomate", "philosophe", "éthique", -0.6, agent_id="guest_b")
+
+    # Opening drains the first item; the second is held for a live interjection
+    # after round 1 (max_rounds=2 so conclude does not win over earpiece).
+    queue = [
+        "Question d'ouverture sans lien.",
+        "Et si l'IA se trompe sur les peaux foncées ?",
+    ]
+
+    def poll():
+        return queue.pop(0) if queue else None
+
+    def peek():
+        return len(queue) > 0
+
+    events = []
+    run_show(
+        "Faut-il ralentir le déploiement de l'IA ?",
+        guest_a,
+        guest_b,
+        max_rounds=2,
+        client=None,
+        enable_web_search=False,
+        emit=events.append,
+        poll_earpiece=poll,
+        peek_earpiece=peek,
+    )
+
+    live = [e for e in events if e["type"] == "earpiece" and e["phase"] == "live"]
+    assert live, "expected a live earpiece interjection"
+    assert "peaux foncées" in live[0]["text"]
+
+    guest_prompts = [
+        u for u in captured
+        if "peaux foncées" in u and (
+            "Question du public" in u or "question du public" in u
+        )
+    ]
+    assert guest_prompts, (
+        "next guest listen/draft must include the drained spectator question"
+    )
+
+
 if __name__ == "__main__":
     class _MP:
         def setattr(self, obj, name, value):
             setattr(obj, name, value)
 
     test_earpiece_opening_and_live(_MP())
+    test_live_earpiece_reaches_next_guest_prompt(_MP())
     print("OK: test_show_earpiece")

@@ -48,6 +48,8 @@ class ShowState(TypedDict, total=False):
     stance_history: dict[str, list[float]]
     moderator_notes: Annotated[list[str], operator.add]
     turn: dict[str, Any]  # scratch du tour courant (claim, angle, evidence, tactic…)
+    # Question spectateur drainée en interjection ; consommée par le prochain listen.
+    pending_audience_question: str
 
 
 def initial_mind(persona: PersonaVector) -> MindState:
@@ -79,6 +81,7 @@ def initial_show_state(
         stance_history={g.agent_id: [g.initial_stance] for g in guests},
         moderator_notes=[],
         turn={},
+        pending_audience_question="",
     )
 
 

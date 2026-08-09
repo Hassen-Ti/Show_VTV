@@ -60,11 +60,15 @@ def _make_guest_node(persona: PersonaVector):
     def guest_node(state: ShowState, runtime: Runtime[ShowContext]) -> dict:
         inherited = len(state["transcript"])
         out = compiled.invoke(state, context=runtime.context)
-        return {
+        delta = {
             "transcript": out["transcript"][inherited:],
             "minds": out["minds"],
             "turn": out["turn"],
         }
+        # listen may clear a drained spectator question; forward that write.
+        if "pending_audience_question" in out:
+            delta["pending_audience_question"] = out["pending_audience_question"]
+        return delta
 
     return guest_node
 
@@ -168,7 +172,9 @@ def build_show_graph(
 
     def moderator_interject(state: ShowState, runtime: Runtime[ShowContext]) -> dict:
         audience = drain_earpiece(runtime.context)
+        pending_audience = ""
         if audience:
+            pending_audience = audience
             emit_event(
                 runtime.context,
                 {"type": "earpiece", "phase": "live", "text": audience},
@@ -195,7 +201,12 @@ def build_show_graph(
         emit_event(
             runtime.context, {"type": "moderator", "round": state["round"], "text": text}
         )
-        return {"transcript": [entry], "moderator_notes": [f"interjection round {state['round']}"]}
+        return {
+            "transcript": [entry],
+            "moderator_notes": [f"interjection round {state['round']}"],
+            # Survives allocate_floor's turn={} reset so the next guest listen can see it.
+            "pending_audience_question": pending_audience,
+        }
 
     def moderator_conclude(state: ShowState, runtime: Runtime[ShowContext]) -> dict:
         drift_lines = []

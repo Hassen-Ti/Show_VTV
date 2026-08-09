@@ -157,13 +157,25 @@ def persona_identity(persona: PersonaVector, mind: MindState, topic: str) -> str
     )
 
 
-def listen_prompt(opponent_text: str, topic: str) -> str:
+def listen_prompt(
+    opponent_text: str,
+    topic: str,
+    *,
+    audience_question: str = "",
+) -> str:
+    audience_block = ""
+    if audience_question:
+        audience_block = (
+            f"\nQuestion du public (à traiter dans ta réponse) : « {audience_question} »"
+        )
     return (
         f"<context>Sujet du débat : {topic}\n"
-        f"Dernière réplique adverse :\n{opponent_text}</context>\n"
+        f"Dernière réplique adverse :\n{opponent_text}"
+        f"{audience_block}</context>\n"
         "<step_order>\n"
         "1. Extraire la thèse (CLAIM) et la faille (WEAKNESS).\n"
         "2. Qualifier l'attaque (ATTACK) et noter sa force (SCORE).\n"
+        "3. Si une question du public est présente, en tenir compte dans CLAIM/WEAKNESS.\n"
         "</step_order>"
     )
 
@@ -212,6 +224,10 @@ def draft_prompt(persona: PersonaVector, mind: MindState, topic: str, turn: dict
     concession_block = (
         f"Commencer par cette concession, puis contre-attaquer : {concession}\n" if concession else ""
     )
+    audience_q = (turn.get("audience_question") or "").strip()
+    audience_block = (
+        f"Question du public à laquelle répondre : « {audience_q} »\n" if audience_q else ""
+    )
     return (
         f"{persona_identity(persona, mind, topic)}\n"
         f"<debate_state>\n"
@@ -220,12 +236,14 @@ def draft_prompt(persona: PersonaVector, mind: MindState, topic: str, turn: dict
         f"Angle: {turn.get('angle', '')}\n"
         f"Tactique: {turn.get('tactic', '')}\n"
         f"Preuves: {evidence[:800]}\n"
+        f"{audience_block}"
         f"</debate_state>\n"
         f"<step_order>\n"
         f"{concession_block}"
         "1. Construire l'argument selon la tactique et l'angle.\n"
         "2. Ancrer dans le domaine et la spécialité du personnage.\n"
-        "3. 3-5 phrases de brouillon interne.\n"
+        "3. Si une question du public est présente, y répondre explicitement.\n"
+        "4. 3-5 phrases de brouillon interne.\n"
         "</step_order>"
     )
 
