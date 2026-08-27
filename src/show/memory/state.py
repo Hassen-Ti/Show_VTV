@@ -4,7 +4,8 @@ Write-contract (qui écrit quoi)
 --------------------------------
 Invité (guest nodes)
   Lit  : ``transcript``, ``minds``, ``turn``, ``pending_audience_question``
-  Écrit : ``minds[leur_id]`` seulement, ``turn``, une entrée ``transcript``
+  Écrit : ``minds[leur_id]`` seulement (delta fusionné via ``merge_minds``),
+          ``turn``, une entrée ``transcript``
 
 Animateur (host / moderator)
   Lit  : ``tension``, ``stance_history``, ``transcript``
@@ -71,6 +72,18 @@ class MindState(_MindStateRequired, total=False):
     carried_over: bool
 
 
+def merge_minds(
+    left: dict[str, MindState] | None,
+    right: dict[str, MindState] | None,
+) -> dict[str, MindState]:
+    """Reducer LangGraph : fusionne les deltas ``minds`` (clé = agent_id).
+
+    Les invités doivent renvoyer seulement ``{leur_id: mind}`` ; le moteur
+    peut renvoyer un sous-ensemble après ``decay``.
+    """
+    return {**(left or {}), **(right or {})}
+
+
 class ShowState(TypedDict, total=False):
     topic: str
     round: int
@@ -78,13 +91,15 @@ class ShowState(TypedDict, total=False):
     turn_index: int
     transcript: Annotated[list[TranscriptEntry], operator.add]
     current_speaker: str
-    minds: dict[str, MindState]
+    minds: Annotated[dict[str, MindState], merge_minds]
     tension: float
     stance_history: dict[str, list[float]]
     moderator_notes: Annotated[list[str], operator.add]
     turn: dict[str, Any]  # scratch du tour courant (claim, angle, evidence, tactic…)
     # Question spectateur drainée en interjection ; consommée par le prochain listen.
     pending_audience_question: str
+    # Éphémère : sortie du nœud ``decide_after_update`` (câblage compositeur).
+    next_moderator_action: str
 
 
 def _clamp(value: float, lo: float, hi: float) -> float:

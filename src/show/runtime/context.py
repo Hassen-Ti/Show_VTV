@@ -8,9 +8,10 @@ from typing import Any, Callable, Optional
 
 from openai import OpenAI
 
-# Événement émis vers le runner : {"type": "turn"|"moderator"|"inner_monologue"|
-# "stance_update"|"step"|"earpiece", ...}
-EmitCallback = Callable[[dict[str, Any]], None]
+from show.runtime.events import ShowEvent
+
+# Événements typés : voir ``show.runtime.events.ShowEvent``.
+EmitCallback = Callable[[ShowEvent | dict[str, Any]], None]
 
 # Sonde régie → oreillette : renvoie la consigne en attente (et la consomme), ou None.
 EarpiecePoll = Callable[[], Optional[str]]
@@ -34,7 +35,7 @@ class ShowContext:
 
 def emit_event(context: ShowContext, event: dict[str, Any]) -> None:
     if context.emit:
-        context.emit(event)
+        context.emit(event)  # type: ignore[arg-type]
 
 
 def drain_earpiece(context: ShowContext) -> str:
@@ -45,7 +46,11 @@ def drain_earpiece(context: ShowContext) -> str:
 
 
 def has_earpiece(context: ShowContext) -> bool:
-    """True si un message spectateur attend d'être lu par le modérateur."""
+    """True si un message spectateur attend d'être lu par le modérateur.
+
+    Source unique pour le routage post-``update_shared_state`` (via
+    ``decide_after_update``). Ne pas re-câbler un ``peek`` parallèle sur le graphe.
+    """
     if context.peek_earpiece is not None:
         return context.peek_earpiece()
     return False

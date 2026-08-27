@@ -11,10 +11,13 @@ sys.path.insert(0, str(ROOT / "src"))
 from show.host.nodes import (
     decide_allocate_route,
     decide_moderator_route,
+    make_decide_after_update,
     make_route_after_allocate,
     make_route_after_update,
+    route_from_decision,
 )
 from show.host.persona import MODERATOR_PERSONA, ModeratorPersona
+from show.runtime.context import ShowContext
 
 
 def test_moderator_persona_identity():
@@ -164,6 +167,29 @@ def test_make_route_after_update_without_peek():
     assert route(state) == "moderator_allocate_floor"
 
 
+def test_decide_after_update_uses_has_earpiece_on_context():
+    peek = MagicMock(return_value=True)
+    decide = make_decide_after_update(MODERATOR_PERSONA)
+    state = {
+        "turn_index": 2,
+        "round": 1,
+        "max_rounds": 5,
+        "tension": 0.0,
+    }
+    runtime = SimpleNamespace(context=ShowContext(peek_earpiece=peek))
+    out = decide(state, runtime)
+    assert out["next_moderator_action"] == "moderator_interject"
+    peek.assert_called_once_with()
+    assert route_from_decision(out) == "moderator_interject"
+
+
+def test_route_from_decision_defaults_to_allocate():
+    assert route_from_decision({}) == "moderator_allocate_floor"
+    assert route_from_decision({"next_moderator_action": "moderator_conclude"}) == (
+        "moderator_conclude"
+    )
+
+
 if __name__ == "__main__":
     test_moderator_persona_identity()
     test_decide_allocate_route()
@@ -176,4 +202,6 @@ if __name__ == "__main__":
     test_decide_moderator_route_odd_round_calm_allocates()
     test_make_route_after_update_wires_peek_and_persona()
     test_make_route_after_update_without_peek()
+    test_decide_after_update_uses_has_earpiece_on_context()
+    test_route_from_decision_defaults_to_allocate()
     print("OK: test_show_moderator")

@@ -4,8 +4,8 @@ Interjection policy (evaluated only when a round is complete — both guests spo
 
 1. **Conclude** — ``round >= max_rounds`` always wins (show must end even if
    an earpiece packet is still queued).
-2. **Earpiece** — spectator packet pending (``peek_earpiece``) → interject to
-   read it on air. Takes precedence over tension / cadence so the audience
+2. **Earpiece** — spectator packet pending (``has_earpiece(context)``) → interject
+   to read it on air. Takes precedence over tension / cadence so the audience
    injection is not starved by heat checks.
 3. **Tension / cadence** — ``tension > interject_threshold`` (SYSLOAD spike)
    **or** even round beat (``round % 2 == 0``) → interject to cool or relaunch.
@@ -29,6 +29,7 @@ from show.runtime.context import (
     ShowContext,
     drain_earpiece,
     emit_event,
+    has_earpiece,
 )
 
 
@@ -169,6 +170,8 @@ def make_route_after_update(
     *,
     peek_earpiece: Optional[EarpiecePeek] = None,
 ):
+    """Factory de routage (tests / compat). Préférer ``make_decide_after_update``."""
+
     def route_after_update(state: ShowState) -> str:
         earpiece_pending = bool(peek_earpiece and peek_earpiece())
         return decide_moderator_route(
@@ -181,6 +184,27 @@ def make_route_after_update(
         )
 
     return route_after_update
+
+
+def make_decide_after_update(moderator: ModeratorPersona):
+    """Nœud avec Runtime : oreillette via ``has_earpiece(context)`` uniquement."""
+
+    def decide_after_update(state: ShowState, runtime: Runtime[ShowContext]) -> dict:
+        action = decide_moderator_route(
+            turn_index=state["turn_index"],
+            round_num=state["round"],
+            max_rounds=state["max_rounds"],
+            tension=state["tension"],
+            interject_threshold=moderator.interject_threshold,
+            earpiece_pending=has_earpiece(runtime.context),
+        )
+        return {"next_moderator_action": action}
+
+    return decide_after_update
+
+
+def route_from_decision(state: ShowState) -> str:
+    return state.get("next_moderator_action") or "moderator_allocate_floor"
 
 
 def make_moderator_interject(moderator: ModeratorPersona):
