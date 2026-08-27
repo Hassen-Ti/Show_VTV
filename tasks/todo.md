@@ -44,3 +44,21 @@
 - Question avant le direct : lue à l'ouverture par Mr Bullshit ; en direct : priorité dans `moderator_interject`.
 - UI spectateur : régie masquée, coulisses off, bandeau PUBLIC + bouton RÉGIE discret en masthead.
 - File max 3 questions ; signaux `audienceQuestionQueued` / `audienceQuestionRead` pour l'état visuel.
+
+---
+
+# Branches feature + agents cloud
+
+## Plan
+
+- [x] Promouvoir `feat/langgraph-debater-show-engine` → `master` distant
+- [x] Commit foundation : `memory/` `host/` `guests/` `runtime/` + `FEATURE_OWNERS.md`
+- [x] Pytest vert après carve (51 passed)
+- [ ] Lancer 5 agents cloud (guests, moderator, shared-memory, ui-platform, quality)
+- [ ] Rapport merge order
+
+## Review
+
+- Carve ownership : `src/show/{memory,host,guests,runtime}/` + compositeur figé `show_graph.py`
+- Shims compat aux anciens chemins (`show.state`, `show.personas`, …)
+- Ownership documenté dans `docs/engineering/FEATURE_OWNERS.md`
