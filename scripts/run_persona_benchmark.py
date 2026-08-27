@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import argparse
+import csv
 import sys
 from pathlib import Path
 
@@ -20,29 +22,47 @@ from show.personas.benchmark import (
     top_n,
 )
 
-OUT_DIR = ROOT / "docs" / "product"
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument(
+        "--out-dir",
+        type=Path,
+        default=ROOT / "docs" / "product",
+        help="Directory for CSV/JSON exports (default: docs/product)",
+    )
+    return p.parse_args(argv)
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
+    args = parse_args(argv)
+    out_dir = args.out_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+
     rows = run_full_benchmark()
     top = top_n(rows, 10)
     cast = top10_balanced_cast(rows)
 
-    export_csv(rows, OUT_DIR / "persona_benchmark_full.csv")
-    export_csv(top, OUT_DIR / "persona_top10.csv")
-    export_csv(cast, OUT_DIR / "persona_top10_cast.csv")
-    export_json(top, OUT_DIR / "persona_top10.json")
-    export_json(cast, OUT_DIR / "persona_top10_cast.json")
+    export_csv(rows, out_dir / "persona_benchmark_full.csv")
+    export_csv(top, out_dir / "persona_top10.csv")
+    export_csv(cast, out_dir / "persona_top10_cast.csv")
+    export_json(top, out_dir / "persona_top10.json")
+    export_json(cast, out_dir / "persona_top10_cast.json")
 
     mind_rows = []
     for personality, domain in all_persona_combos():
         persona = build_persona(personality, domain)
         micro = mind_micro_benchmark(persona)
-        mind_rows.append({"persona_id": f"{personality}_{domain}", "personality": personality, "domain": domain, **micro})
+        mind_rows.append(
+            {
+                "persona_id": f"{personality}_{domain}",
+                "personality": personality,
+                "domain": domain,
+                **micro,
+            }
+        )
 
-    import csv
-
-    mind_path = OUT_DIR / "persona_mind_tests.csv"
+    mind_path = out_dir / "persona_mind_tests.csv"
     with mind_path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=mind_rows[0].keys())
         writer.writeheader()
@@ -63,7 +83,7 @@ def main() -> None:
             f"score={r.final_score:.3f} | opp_drift={r.agent_opponent_drift:.3f}"
         )
 
-    print(f"\nDataframes écrits dans {OUT_DIR}/")
+    print(f"\nDataframes écrits dans {out_dir}/")
     print("  - persona_benchmark_full.csv (15 lignes, 26 métriques)")
     print("  - persona_top10.csv (classement brut)")
     print("  - persona_top10_cast.csv (casting plateau recommandé)")

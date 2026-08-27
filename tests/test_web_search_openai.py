@@ -1,25 +1,29 @@
 """
 Test minimal : recherche web via l’API Responses OpenAI (clé dans `.env`).
 
-Script interactif — sous pytest (stdin non interactif), il se termine sans rien faire.
+Marqué `network` — sous pytest sans TTY / sans clé, le test est skippé.
+Lancer en interactif : `uv run python tests/test_web_search_openai.py`
 """
+from __future__ import annotations
+
 import os
 import sys
 
-from openai import OpenAI
+import pytest
 from dotenv import load_dotenv
+from openai import OpenAI
+
+pytestmark = pytest.mark.network
 
 
 def test_web_search_simple():
     if not sys.stdin.isatty():
-        print("SKIP: test interactif, lancer directement avec python.")
-        return
+        pytest.skip("interactive network test; run: python tests/test_web_search_openai.py")
 
     load_dotenv()
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        print("Erreur: OPENAI_API_KEY absente du fichier .env")
-        return
+        pytest.skip("OPENAI_API_KEY required for live web-search check")
 
     print("OPENAI_API_KEY détectée (valeur non affichée).")
     client = OpenAI(api_key=api_key)
