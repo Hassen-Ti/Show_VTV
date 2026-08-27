@@ -1,7 +1,8 @@
 """Sous-graphe invité : topologie pilotée par ``architecture_id`` (patterns publiés).
 
 Chaque persona embarque une architecture agentique (ReAct, Reflexion, Plan-and-Execute…)
-et un domaine qui choisit les nœuds de preuve / pensée spécialisés.
+et un domaine qui choisit les nœuds de preuve / pensée spécialisés via
+``domain_worker_nodes`` (registre — pas de table dupliquée ici).
 """
 
 from __future__ import annotations
@@ -15,32 +16,13 @@ from show.guests.nodes import NODE_REGISTRY
 from show.guests.nodes.factories import route_critic_gate, route_supervisor
 from show.guests.personas.trace import make_traced_node
 from show.guests.personas.architectures import get_architecture
+from show.guests.personas.registry import domain_worker_nodes
 from show.guests.personas.vector import PersonaVector, validate
 from show.memory.state import ShowState
-
-# Nœud worker pour l'architecture supervisor_worker, par style de preuve.
-_DOMAIN_WORKERS: dict[str, tuple[str, str]] = {
-    "empirical": ("verify_facts", "hypothesize"),
-    "precedent": ("recall_precedent", "build_analogy"),
-    "dialectic": ("reframe_concept", "find_contradiction"),
-    "narrative": ("recall_anecdote", "narrative_frame"),
-    "formal": ("quantify", "model_tradeoff"),
-}
 
 
 def route_concession(state: ShowState) -> str:
     return "concede_then_refute" if state["turn"].get("must_concede") else "draft"
-
-
-def _domain_think_node(persona: PersonaVector) -> str:
-    """Nœud de synthèse dialectique par défaut selon le domaine."""
-    workers = _DOMAIN_WORKERS.get(persona.evidence_style, ("verify_facts", "hypothesize"))
-    return workers[1]
-
-
-def _domain_evidence_node(persona: PersonaVector) -> str:
-    workers = _DOMAIN_WORKERS.get(persona.evidence_style, ("verify_facts", "hypothesize"))
-    return workers[0]
 
 
 def _register_nodes(graph: StateGraph, persona: PersonaVector, names: set[str]) -> None:
@@ -91,8 +73,7 @@ def build_guest_subgraph(persona: PersonaVector):
     if "strategize" not in path:
         path.append("strategize")
 
-    worker_evidence = _domain_evidence_node(persona)
-    worker_think = _domain_think_node(persona)
+    worker_evidence, worker_think = domain_worker_nodes(persona.domain)
 
     extra = {
         "concede_then_refute", "draft", "voice", "deliver",

@@ -1,10 +1,15 @@
-"""NODE_REGISTRY : nom de nœud cognitif → factory ``persona -> node_fn``."""
+"""NODE_REGISTRY : nom de nœud cognitif → factory ``persona -> node_fn``.
 
+Organisation :
+- ``common`` — types ``NodeFn`` / ``NodeFactory``, labels UI, ``notify_step``
+- ``prompts`` — contrats LLM des nœuds invités (pas l'animateur)
+- ``factories`` — cognition (listen, preuve, pensée, architectures)
+- ``delivery`` — draft → voice → deliver
+"""
+
+from show.guests.nodes.common import NodeFactory, NodeFn, STEP_LABELS, notify_step
 from show.guests.nodes.delivery import make_deliver, make_draft, make_voice
 from show.guests.nodes.factories import (
-    NodeFactory,
-    NodeFn,
-    STEP_LABELS,
     make_concede_then_refute,
     make_critic_verify,
     make_evidence_node,
@@ -54,4 +59,12 @@ NODE_REGISTRY: dict[str, NodeFactory] = {
     "deliver": make_deliver,
 }
 
-__all__ = ["NODE_REGISTRY", "NodeFactory", "NodeFn", "STEP_LABELS"]
+__all__ = [
+    "NODE_REGISTRY",
+    "NodeFactory",
+    "NodeFn",
+    "STEP_LABELS",
+    "notify_step",
+    "route_critic_gate",
+    "route_supervisor",
+]

@@ -103,6 +103,14 @@ DOMAINS: dict[str, dict] = {
 DEFAULT_FORBIDDEN = ("insulte", "injure", "attaque personnelle")
 
 
+def domain_worker_nodes(domain: str) -> tuple[str, str]:
+    """``(evidence_node, think_node)`` pour un domaine — source unique pour registre et sous-graphe."""
+    if domain not in DOMAINS:
+        raise ValueError(f"domaine inconnu: {domain!r} (choix: {sorted(DOMAINS)})")
+    d = DOMAINS[domain]
+    return d["evidence_node"], d["think_node"]
+
+
 def _resolve_cognitive_sequence(
     architecture_id: str,
     domain: str,
@@ -114,9 +122,7 @@ def _resolve_cognitive_sequence(
         return cognitive_sequence_for(override)
 
     spec = get_architecture(architecture_id)
-    d = DOMAINS[domain]
-    evidence = d["evidence_node"]
-    think = d["think_node"]
+    evidence, think = domain_worker_nodes(domain)
 
     if spec.uses_supervisor:
         return ("listen", "supervisor_route", "strategize")

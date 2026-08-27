@@ -8,6 +8,7 @@ __all__ = [
     "MODERATOR_PERSONA",
     "ModeratorPersona",
     "PERSONALITIES",
+    "domain_worker_nodes",
     "make_guest",
     "make_guest_with_architecture",
     "persona_style_hints",
