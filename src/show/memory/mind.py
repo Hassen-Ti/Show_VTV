@@ -2,6 +2,9 @@
 
 Le score de persuasion est produit par un juge LLM dans le nœud ``listen`` puis
 injecté ici ; ces fonctions ne font que la dynamique (dérive, émotions, tension).
+
+Entrées hors domaine (persuasion hors [0, 1], minds vides, pas d'entrées
+invité) sont clampées ou dégradées en no-op sûr — jamais d'exception.
 """
 
 from __future__ import annotations
@@ -22,6 +25,27 @@ def _clamp(value: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, value))
 
 
+def _persuasion(persuasion: float) -> float:
+    """Normalise un score de persuasion dans [0, 1]."""
+    return _clamp(float(persuasion), 0.0, 1.0)
+
+
+def _copy_mind(mind: MindState) -> MindState:
+    """Copie superficielle + listes re-créées (évite de muter l'entrée)."""
+    new: MindState = {
+        "stance": mind["stance"],
+        "conviction": mind["conviction"],
+        "valence": mind["valence"],
+        "arousal": mind["arousal"],
+        "beliefs": list(mind.get("beliefs", [])),
+        "grudges": list(mind.get("grudges", [])),
+        "inner_monologue": mind.get("inner_monologue", ""),
+    }
+    if "carried_over" in mind:
+        new["carried_over"] = bool(mind["carried_over"])
+    return new
+
+
 def revise_stance(
     mind: MindState,
     persona: PersonaVector,
@@ -32,34 +56,47 @@ def revise_stance(
 
     delta = persuasion * openness * DRIFT_LR, où openness dépend de la
     stubbornness (trait) et de la conviction courante (état).
+
+    Ne mute pas ``mind``. Persuasion hors [0, 1] est clampée. Gap nul ou
+    openness nulle → copie inchangée (stance).
     """
-    gap = opponent_stance - mind["stance"]
+    p = _persuasion(persuasion)
+    new = _copy_mind(mind)
+    gap = float(opponent_stance) - mind["stance"]
     openness = (1.0 - persona.stubbornness) * (1.0 - mind["conviction"])
-    delta = persuasion * openness * DRIFT_LR
+    if p == 0.0 or openness <= 0.0 or gap == 0.0:
+        return new
+    delta = p * openness * DRIFT_LR
     step = min(delta, abs(gap))
-    direction = 1.0 if gap > 0 else -1.0 if gap < 0 else 0.0
-    new = dict(mind)
+    direction = 1.0 if gap > 0 else -1.0
     new["stance"] = _clamp(mind["stance"] + direction * step, -1.0, 1.0)
-    return new  # type: ignore[return-value]
+    return new
 
 
 def update_conviction(mind: MindState, persuasion: float, countered: bool) -> MindState:
     """Contrer renforce la conviction ; être ébranlé sans répondre l'érode."""
-    delta = 0.05 if countered else -0.05 * persuasion
-    new = dict(mind)
+    p = _persuasion(persuasion)
+    delta = 0.05 if countered else -0.05 * p
+    new = _copy_mind(mind)
     new["conviction"] = _clamp(mind["conviction"] + delta, 0.1, 1.0)
-    return new  # type: ignore[return-value]
+    return new
 
 
 def should_concede(persuasion: float, persona: PersonaVector, rand: float) -> bool:
-    """Concession structurelle : argument trop fort, ou trait de caractère."""
-    return persuasion > CONCEDE_THRESHOLD or rand < persona.concession_rate
+    """Concession structurelle : argument trop fort, ou trait de caractère.
+
+    ``rand`` est attendu dans [0, 1] (tirage uniforme) ; hors bornes → clamp.
+    """
+    p = _persuasion(persuasion)
+    r = _clamp(float(rand), 0.0, 1.0)
+    return p > CONCEDE_THRESHOLD or r < persona.concession_rate
 
 
 def appraise(mind: MindState, persona: PersonaVector, event: str) -> MindState:
     """Appraisal émotionnel (valence / arousal) selon l'événement du tour.
 
     Événements : attacked_personal | attacked_moral | conceded_to_me | argument.
+    Tout autre ``event`` est un no-op (copie clampée de l'état courant).
     """
     valence = mind["valence"]
     arousal = mind["arousal"]
@@ -71,22 +108,23 @@ def appraise(mind: MindState, persona: PersonaVector, event: str) -> MindState:
         arousal -= 0.1
     elif event == "argument":
         arousal += persona.arousal_gain * 0.1
-    new = dict(mind)
+    # else: unknown → no affective change
+    new = _copy_mind(mind)
     new["valence"] = _clamp(valence, -1.0, 1.0)
     new["arousal"] = _clamp(arousal, 0.0, 1.0)
-    return new  # type: ignore[return-value]
+    return new
 
 
 def decay(mind: MindState, persona: PersonaVector) -> MindState:
     """Fin de round : l'excitation retombe, l'humeur revient vers la baseline."""
-    new = dict(mind)
+    new = _copy_mind(mind)
     new["arousal"] = _clamp(mind["arousal"] * AROUSAL_DECAY, 0.0, 1.0)
     new["valence"] = _clamp(
         mind["valence"] + (persona.affective_baseline - mind["valence"]) * VALENCE_RECOVERY,
         -1.0,
         1.0,
     )
-    return new  # type: ignore[return-value]
+    return new
 
 
 def effective_voice_temperature(mind: MindState, persona: PersonaVector) -> float:
@@ -95,22 +133,30 @@ def effective_voice_temperature(mind: MindState, persona: PersonaVector) -> floa
 
 
 def effective_sentence_max(mind: MindState, persona: PersonaVector, high_arousal: float) -> int:
-    """À chaud, les répliques deviennent plus sèches."""
+    """À chaud, les répliques deviennent plus sèches (jamais sous 1 phrase)."""
     if mind["arousal"] > high_arousal:
-        return max(1, persona.sentence_max - 1)
-    return persona.sentence_max
+        return max(1, int(persona.sentence_max) - 1)
+    return max(1, int(persona.sentence_max))
 
 
 def compute_tension(
     minds: dict[str, MindState],
     last_round_entries: list[TranscriptEntry],
 ) -> float:
-    """Température du plateau : émotions des invités + densité d'attaques."""
-    arousals = [m["arousal"] for m in minds.values()]
-    mean_arousal = sum(arousals) / len(arousals) if arousals else 0.0
-    guest_entries = [e for e in last_round_entries if e["role"] == "guest"]
+    """Température du plateau : émotions des invités + densité d'attaques.
+
+    Cas limites (tous → tension 0.0 côté arousal/attaques) :
+    - ``minds`` vide ou None → mean_arousal = 0
+    - aucune entrée ``role=="guest"`` → attack_density = 0
+    """
+    mind_values = list((minds or {}).values())
+    if mind_values:
+        mean_arousal = sum(m["arousal"] for m in mind_values) / len(mind_values)
+    else:
+        mean_arousal = 0.0
+    guest_entries = [e for e in (last_round_entries or []) if e.get("role") == "guest"]
     if guest_entries:
-        attacks = sum(1 for e in guest_entries if e["tactic"] in AGGRESSIVE_TACTICS)
+        attacks = sum(1 for e in guest_entries if e.get("tactic") in AGGRESSIVE_TACTICS)
         attack_density = attacks / len(guest_entries)
     else:
         attack_density = 0.0
