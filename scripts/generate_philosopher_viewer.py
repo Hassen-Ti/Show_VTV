@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 import webbrowser
@@ -258,15 +259,37 @@ def generate_html(lab, path: Path) -> Path:
     return path
 
 
-def main(open_browser: bool = True) -> None:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument(
+        "--out-dir",
+        type=Path,
+        default=OUT,
+        help="Directory for HTML/JSON outputs (default: docs/product)",
+    )
+    p.add_argument(
+        "--no-open",
+        action="store_true",
+        help="Do not open the generated HTML in a browser",
+    )
+    return p.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = parse_args(argv)
+    out = args.out_dir
+    out.mkdir(parents=True, exist_ok=True)
+    html_path = out / "philosopher_reflection_lab.html"
+    json_path = out / "philosopher_reflection_traces.json"
+
     lab = run_philosopher_lab()
-    export_philosopher_json(lab, JSON_PATH)
-    generate_html(lab, HTML_PATH)
-    print(f"Viewer : {HTML_PATH}")
-    print(f"Traces : {JSON_PATH}")
-    if open_browser:
-        webbrowser.open(HTML_PATH.as_uri())
+    export_philosopher_json(lab, json_path)
+    generate_html(lab, html_path)
+    print(f"Viewer : {html_path}")
+    print(f"Traces : {json_path}")
+    if not args.no_open:
+        webbrowser.open(html_path.as_uri())
 
 
 if __name__ == "__main__":
-    main(open_browser="--no-open" not in sys.argv)
+    main()

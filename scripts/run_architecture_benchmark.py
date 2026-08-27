@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -11,13 +12,26 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from show.personas.benchmark_architectures import export_csv, export_json, run_architecture_benchmark
 
-OUT = ROOT / "docs" / "product"
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument(
+        "--out-dir",
+        type=Path,
+        default=ROOT / "docs" / "product",
+        help="Directory for CSV/JSON exports (default: docs/product)",
+    )
+    return p.parse_args(argv)
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
+    args = parse_args(argv)
+    out = args.out_dir
+    out.mkdir(parents=True, exist_ok=True)
+
     rows = run_architecture_benchmark()
-    export_csv(rows, OUT / "architecture_benchmark.csv")
-    export_json(rows, OUT / "architecture_benchmark.json")
+    export_csv(rows, out / "architecture_benchmark.csv")
+    export_json(rows, out / "architecture_benchmark.json")
 
     print("=== 10 ARCHITECTURES — Provocateur physicien (1 round agent mock) ===\n")
     for r in rows:
@@ -26,7 +40,7 @@ def main() -> None:
             f"steps={r.steps_executed:2d} | tactic={r.tactic_used:18s} | "
             f"plan={r.has_plan} reflect={r.has_reflection}"
         )
-    print(f"\nÉcrit : {OUT}/architecture_benchmark.csv")
+    print(f"\nÉcrit : {out}/architecture_benchmark.csv")
 
 
 if __name__ == "__main__":

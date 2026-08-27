@@ -3,9 +3,14 @@ Create animated avatar GIFs for the debate agents
 Blue agent (Tech Optimist) and Red agent (Tech Skeptic)
 """
 
-from PIL import Image, ImageDraw, ImageFont
-import numpy as np
+from __future__ import annotations
+
+import argparse
 import math
+from pathlib import Path
+
+import numpy as np
+from PIL import Image, ImageDraw
 
 def create_pulsing_avatar(color_name, base_color, output_file):
     """Create a pulsing animated avatar GIF"""
@@ -117,17 +122,33 @@ def create_static_avatar(color_name, base_color, output_file):
     img.save(output_file)
     print(f"Created static {output_file}")
 
-if __name__ == "__main__":
-    # Create Blue Avatar (Tech Optimist)
-    create_pulsing_avatar("blue", (0, 120, 255), "avatar_blue.gif")
-    create_static_avatar("blue", (0, 120, 255), "avatar_blue_static.png")
-    
-    # Create Red Avatar (Tech Skeptic)
-    create_pulsing_avatar("red", (255, 50, 50), "avatar_red.gif")
-    create_static_avatar("red", (255, 50, 50), "avatar_red_static.png")
-    
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument(
+        "--out-dir",
+        type=Path,
+        default=Path("."),
+        help="Directory for generated avatar files (default: cwd)",
+    )
+    return p.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = parse_args(argv)
+    out = args.out_dir
+    out.mkdir(parents=True, exist_ok=True)
+
+    create_pulsing_avatar("blue", (0, 120, 255), str(out / "avatar_blue.gif"))
+    create_static_avatar("blue", (0, 120, 255), str(out / "avatar_blue_static.png"))
+    create_pulsing_avatar("red", (255, 50, 50), str(out / "avatar_red.gif"))
+    create_static_avatar("red", (255, 50, 50), str(out / "avatar_red_static.png"))
+
     print("\nAvatars created successfully!")
-    print("- avatar_blue.gif: Animated blue avatar")
-    print("- avatar_red.gif: Animated red avatar")
-    print("- avatar_blue_static.png: Static blue avatar (fallback)")
-    print("- avatar_red_static.png: Static red avatar (fallback)")
+    print(f"- {out / 'avatar_blue.gif'}: Animated blue avatar")
+    print(f"- {out / 'avatar_red.gif'}: Animated red avatar")
+    print(f"- {out / 'avatar_blue_static.png'}: Static blue avatar (fallback)")
+    print(f"- {out / 'avatar_red_static.png'}: Static red avatar (fallback)")
+
+
+if __name__ == "__main__":
+    main()

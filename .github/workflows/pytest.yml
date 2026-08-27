@@ -1,0 +1,30 @@
+name: pytest
+
+on:
+  push:
+    branches: [master, eng/quality]
+  pull_request:
+    branches: [master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install
+
+      - name: Install project
+        run: uv sync
+
+      - name: Run pytest (no API key required)
+        run: uv run --with pytest python -m pytest tests/ -q
+        env:
+          # Ensure network/API tests skip cleanly without secrets.
+          OPENAI_API_KEY: ""
