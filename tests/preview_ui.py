@@ -17,6 +17,7 @@ from PyQt6.QtQuick import QQuickWindow  # noqa: F401
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT_DIR = ROOT / "docs" / "screenshots"
+_MAX_EARPIECE = 3
 
 
 class MockBackend(QObject):
@@ -24,12 +25,18 @@ class MockBackend(QObject):
     messageCompleted = pyqtSignal(str, str, int)
     searchStarted = pyqtSignal(str, str)
     backstageUpdate = pyqtSignal(str)
+    # Aligné bridge : Queued = en file ; Read = drainée / lue à l'antenne.
     audienceQuestionQueued = pyqtSignal(str)
     audienceQuestionRead = pyqtSignal(str)
     errorOccurred = pyqtSignal(str)
     debateFinished = pyqtSignal()
     debateStatusChanged = pyqtSignal(bool)
     themeGenerated = pyqtSignal(str)
+
+    def __init__(self):
+        super().__init__()
+        self._earpiece: list[str] = []
+        self._running = False
 
     @pyqtSlot(result=str)
     def getDefaultTopic(self):
@@ -43,12 +50,21 @@ class MockBackend(QObject):
     def getGuestNames(self, preset_key: str):
         return {"left": "Provocateur Physicien", "right": "Diplomate Philosophe"}
 
+    @pyqtSlot(result=int)
+    def getEarpieceQueueDepth(self):
+        return len(self._earpiece)
+
+    @pyqtSlot(result=int)
+    def getEarpieceQueueCapacity(self):
+        return _MAX_EARPIECE
+
     @pyqtSlot(str)
     def generateTheme(self, user_topic):
         self.themeGenerated.emit("L'IA médicale doit-elle avoir le dernier mot?")
 
     @pyqtSlot(str, str)
     def startDebate(self, topic, preset_key=""):
+        self._running = True
         self.debateStatusChanged.emit(True)
 
     @pyqtSlot(str, result=bool)
@@ -56,17 +72,29 @@ class MockBackend(QObject):
         cleaned = text.strip()
         if not cleaned:
             return False
+        if len(self._earpiece) >= _MAX_EARPIECE:
+            return False
+        self._earpiece.append(cleaned)
         self.audienceQuestionQueued.emit(cleaned)
         return True
 
     @pyqtSlot()
     def stopDebate(self):
+        self._running = False
+        self._earpiece.clear()
         self.debateStatusChanged.emit(False)
+
+    def drain_one(self):
+        """Helper preview : simule une lecture antenne (audienceQuestionRead)."""
+        if not self._earpiece:
+            return
+        text = self._earpiece.pop(0)
+        self.audienceQuestionRead.emit(text)
 
 
 def simulate_live(backend: MockBackend):
     backend.debateStatusChanged.emit(True)
-    backend.audienceQuestionQueued.emit("Et si l'IA se trompe sur les peaux foncées ?")
+    backend.submitAudienceQuestion("Et si l'IA se trompe sur les peaux foncées ?")
     backend.messageStreamReceived.emit(
         "moderator",
         "Bonsoir et bienvenue sur le plateau de Show V.TV ! Avant de commencer, "
@@ -74,7 +102,7 @@ def simulate_live(backend: MockBackend):
         "Ce soir, un débat qui fâche : faut-il confier nos diagnostics médicaux à une machine ?",
         0,
     )
-    backend.audienceQuestionRead.emit("Et si l'IA se trompe sur les peaux foncées ?")
+    backend.drain_one()
     backend.messageStreamReceived.emit(
         "agent_one",
         "Les chiffres sont têtus : sur la détection précoce de certains cancers, "

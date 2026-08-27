@@ -58,10 +58,16 @@ ApplicationWindow {
     property string currentSpeaker: ""
     property string audienceQuestionPending: ""
     property bool audienceQuestionWasRead: false
+    // File oreillette (max 3 côté bridge) — hint UX si pleine / en attente.
+    property int audienceQueueDepth: 0
+    property int audienceQueueCapacity: 3
+    property string audienceHint: ""
     // Les zones affichent un texte d'attente qu'on efface au premier flux réel.
     property bool leftFeedPristine: true
     property bool rightFeedPristine: true
     property bool modFeedPristine: true
+
+    readonly property bool inRegie: !spectatorMode || regieVisible
 
     // ------------------------------------------------------------------
     // Background: quiet studio gradient
@@ -239,13 +245,19 @@ ApplicationWindow {
                     color: theme.gold
                 }
 
-                // Toggle régie (spectateur → producteur)
+                // Toggle régie : état coché = panneaux producteur visibles
+                // (label fixe « RÉGIE », cohérent avec le switch COULISSES).
                 Button {
                     id: regieToggle
                     Layout.preferredHeight: 28
                     Layout.preferredWidth: regieToggle.implicitWidth
-                    text: regieVisible ? "SPECTATEUR" : "RÉGIE"
+                    checkable: true
+                    checked: regieVisible
+                    text: "RÉGIE"
                     visible: spectatorMode
+                    Accessible.name: regieVisible
+                                 ? "Fermer la régie, mode spectateur"
+                                 : "Ouvrir la régie"
 
                     contentItem: Text {
                         text: regieToggle.text
@@ -264,11 +276,18 @@ ApplicationWindow {
                         border.color: regieVisible ? theme.gold : theme.line
                         border.width: 1
                         radius: 4
+                        Behavior on border.color { ColorAnimation { duration: 150 } }
+                        Behavior on color { ColorAnimation { duration: 150 } }
                     }
                     onClicked: {
                         regieVisible = !regieVisible
-                        if (!regieVisible)
+                        checked = regieVisible
+                        if (!regieVisible) {
+                            // Resync coulisses : éviter switch ON + panneau fermé.
                             backstageVisible = false
+                            if (backstageSwitch.checked)
+                                backstageSwitch.checked = false
+                        }
                     }
                 }
             }
@@ -280,7 +299,7 @@ ApplicationWindow {
         Rectangle {
             id: regieStrip
             Layout.fillWidth: true
-            Layout.preferredHeight: (!spectatorMode || regieVisible) ? 66 : 0
+            Layout.preferredHeight: inRegie ? 66 : 0
             visible: Layout.preferredHeight > 0
             clip: true
             color: theme.panel
@@ -632,8 +651,11 @@ ApplicationWindow {
                             checked: backstageVisible
                             text: "COULISSES"
                             accent: theme.gold
-                            visible: !spectatorMode || regieVisible
-                            onCheckedChanged: backstageVisible = checked
+                            visible: inRegie
+                            onCheckedChanged: {
+                                if (backstageVisible !== checked)
+                                    backstageVisible = checked
+                            }
                         }
                         Item { Layout.fillWidth: true }
                     }
@@ -851,12 +873,17 @@ ApplicationWindow {
                     spacing: 2
                     Eyebrow { text: "PUBLIC"; color: Qt.alpha(theme.gold, 0.7) }
                     Text {
-                        text: audienceQuestionPending !== ""
-                              ? "En attente — le modérateur décidera s'il relance le débat"
-                              : "Intervenir de loin"
+                        text: {
+                            if (audienceHint !== "")
+                                return audienceHint
+                            if (audienceQueueDepth > 0)
+                                return "En file (" + audienceQueueDepth + "/" + audienceQueueCapacity
+                                       + ") — le modérateur décidera s'il relance"
+                            return "Intervenir de loin"
+                        }
                         font.family: theme.body
                         font.pixelSize: 11
-                        color: theme.inkDim
+                        color: audienceHint !== "" ? theme.coral : theme.inkDim
                     }
                 }
 
@@ -869,6 +896,7 @@ ApplicationWindow {
                     placeholderText: "Poser une question au plateau…"
                     maximumLength: 280
                     onAccepted: audienceSendBtn.clicked()
+                    onTextEdited: audienceHint = ""
                 }
 
                 Button {
@@ -904,6 +932,11 @@ ApplicationWindow {
                         if (ok) {
                             audienceQuestionPending = audienceInput.text.trim()
                             audienceInput.text = ""
+                            audienceHint = ""
+                            syncAudienceQueueDepth()
+                        } else if (audienceInput.text.trim().length > 0) {
+                            audienceHint = "File pleine — max " + audienceQueueCapacity + " questions"
+                            syncAudienceQueueDepth()
                         }
                     }
                 }
@@ -929,7 +962,7 @@ ApplicationWindow {
 
                 ColumnLayout {
                     spacing: 2
-                    visible: !spectatorMode || regieVisible
+                    visible: inRegie
                     Eyebrow { text: "SUJET" }
                     Text {
                         text: "Question du débat"
@@ -941,16 +974,29 @@ ApplicationWindow {
 
                 Rectangle {
                     width: 1; height: 34; color: theme.lineSoft
-                    visible: !spectatorMode || regieVisible
+                    visible: inRegie
+                }
+
+                // En mode spectateur pur : sujet en lecture seule (pas de régie).
+                Text {
+                    Layout.fillWidth: true
+                    visible: !inRegie
+                    text: topicInput.text
+                    color: theme.ink
+                    font.family: theme.body
+                    font.pixelSize: 14
+                    elide: Text.ElideRight
+                    verticalAlignment: Text.AlignVCenter
                 }
 
                 StudioField {
                     id: topicInput
                     Layout.fillWidth: true
                     Layout.preferredHeight: 38
+                    visible: inRegie
                     text: generatedTheme || (backend ? backend.getDefaultTopic() : "Devons-nous faire confiance à l'IA?")
                     placeholderText: "Question posée aux débatteurs…"
-                    readOnly: spectatorMode && !regieVisible && debateRunning
+                    readOnly: debateRunning
                 }
 
                 Button {
@@ -1061,7 +1107,19 @@ ApplicationWindow {
         rightGuestName = names.right
     }
 
-    Component.onCompleted: refreshGuestNames()
+    function syncAudienceQueueDepth() {
+        if (!backend)
+            return
+        if (typeof backend.getEarpieceQueueDepth === "function")
+            audienceQueueDepth = backend.getEarpieceQueueDepth()
+        if (typeof backend.getEarpieceQueueCapacity === "function")
+            audienceQueueCapacity = backend.getEarpieceQueueCapacity()
+    }
+
+    Component.onCompleted: {
+        refreshGuestNames()
+        syncAudienceQueueDepth()
+    }
 
     // ------------------------------------------------------------------
     // Backend connections
@@ -1135,12 +1193,18 @@ ApplicationWindow {
         }
 
         function onAudienceQuestionQueued(question) {
+            // Signal : question acceptée en file oreillette (pas encore lue antenne).
             audienceQuestionPending = question
+            audienceHint = ""
+            syncAudienceQueueDepth()
         }
 
         function onAudienceQuestionRead(question) {
+            // Signal : modérateur a drainé / lit la question à l'antenne.
             audienceQuestionPending = ""
             audienceQuestionWasRead = true
+            audienceHint = ""
+            syncAudienceQueueDepth()
         }
 
         function onDebateStatusChanged(isRunning) {
@@ -1149,6 +1213,7 @@ ApplicationWindow {
                 currentSpeaker = ""
                 audienceQuestionWasRead = false
             }
+            syncAudienceQueueDepth()
         }
 
         function onDebateFinished() {
