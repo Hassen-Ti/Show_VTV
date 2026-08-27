@@ -312,7 +312,7 @@ def simulate_agent_multi(
 def _preset_label(personality: str, domain: str) -> str:
     for key, preset in _import_presets().items():
         for slot in (preset.guest_a, preset.guest_b):
-            if slot[0] == personality and slot[1] == domain:
+            if slot.personality == personality and slot.domain == domain:
                 return preset.label if key else "Débat libre"
     return ""
 

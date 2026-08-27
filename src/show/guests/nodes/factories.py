@@ -1,10 +1,12 @@
-"""Registre des nœuds cognitifs : factories ``persona -> node_fn(state, runtime)``.
+"""Factories des nœuds cognitifs : ``persona -> node_fn(state, runtime)``.
 
-Trois familles :
+Trois familles (hors mise en voix, voir ``delivery.py``) :
 - ``listen`` : perception + mise à jour du mind (dérive, émotions, concession) ;
 - nœuds de preuve (recherche web typée par le domaine) ;
 - nœuds de pensée (raisonnement interne typé par le domaine), puis ``strategize``.
-La mise en voix (``draft`` / ``voice`` / ``deliver``) est dans ``delivery.py``.
+
+Types / labels / ``notify_step`` : ``show.guests.nodes.common``.
+Prompts : ``show.guests.nodes.prompts``.
 """
 
 from __future__ import annotations
@@ -16,48 +18,34 @@ from langgraph.runtime import Runtime
 from show.parsing import first_allowed_tactic, parse_labeled_lines
 from config.show_config import HIGH_AROUSAL, SHOW_CONFIG
 from show import llm, mind as mind_algo
-from show.runtime.context import ShowContext, emit_event
+from show.runtime.context import ShowContext
 from show.guests.nodes import prompts
+from show.guests.nodes.common import NodeFactory, NodeFn, STEP_LABELS, notify_step
 from show.guests.personas.vector import AGGRESSIVE_TACTICS, PersonaVector
 from show.memory.state import ShowState, last_guest_entry
 
-NodeFn = Callable[[ShowState, Runtime[ShowContext]], dict]
-NodeFactory = Callable[[PersonaVector], NodeFn]
-
-STEP_LABELS = {
-    "listen": "écoute l'adversaire",
-    "verify_facts": "vérifie les faits",
-    "hypothesize": "formule une hypothèse",
-    "recall_precedent": "convoque un précédent",
-    "build_analogy": "construit une analogie",
-    "reframe_concept": "redéfinit les termes",
-    "find_contradiction": "cherche la contradiction",
-    "recall_anecdote": "se souvient d'une histoire",
-    "narrative_frame": "met en récit",
-    "quantify": "chiffre le problème",
-    "model_tradeoff": "pèse l'arbitrage",
-    "strategize": "choisit sa tactique",
-    "plan": "établit un plan",
-    "reflect": "réfléchit sur son brouillon",
-    "revise_draft": "révise le brouillon",
-    "critic_verify": "vérifie la solidité",
-    "self_correct": "corrige son argument",
-    "recall_memory": "rappelle ses souvenirs",
-    "supervisor_route": "route vers un worker",
-    "parallel_gather": "collecte preuves en parallèle",
-    "concede_then_refute": "concède avant de contrer",
-    "draft": "construit son argument",
-    "voice": "met en voix",
-    "deliver": "prend la parole",
-}
-
-
-def _notify(runtime: Runtime[ShowContext], persona: PersonaVector, step: str) -> None:
-    emit_event(
-        runtime.context,
-        {"type": "step", "agent": persona.agent_id, "step": step,
-         "label": STEP_LABELS.get(step, step)},
-    )
+# Réexport pour les imports historiques ``from show.guests.nodes.factories import …``.
+__all__ = [
+    "NodeFactory",
+    "NodeFn",
+    "STEP_LABELS",
+    "make_concede_then_refute",
+    "make_critic_verify",
+    "make_evidence_node",
+    "make_listen",
+    "make_parallel_gather",
+    "make_plan",
+    "make_recall_memory",
+    "make_reflect",
+    "make_revise_draft",
+    "make_self_correct",
+    "make_strategize",
+    "make_supervisor_route",
+    "make_think_node",
+    "notify_step",
+    "route_critic_gate",
+    "route_supervisor",
+]
 
 
 def _parse_score(raw: str) -> float:
@@ -69,7 +57,7 @@ def _parse_score(raw: str) -> float:
 
 def make_listen(persona: PersonaVector) -> NodeFn:
     def listen(state: ShowState, runtime: Runtime[ShowContext]) -> dict:
-        _notify(runtime, persona, "listen")
+        notify_step(runtime, persona, "listen")
         mind = state["minds"][persona.agent_id]
         opponent = last_guest_entry(state, exclude=persona.agent_id)
         audience_question = (state.get("pending_audience_question") or "").strip()
@@ -154,7 +142,7 @@ _EVIDENCE_QUERIES: dict[str, Callable[[PersonaVector, ShowState], str]] = {
 def make_evidence_node(name: str) -> NodeFactory:
     def factory(persona: PersonaVector) -> NodeFn:
         def node(state: ShowState, runtime: Runtime[ShowContext]) -> dict:
-            _notify(runtime, persona, name)
+            notify_step(runtime, persona, name)
             ctx = runtime.context
             if not ctx.enable_web_search or ctx.client is None:
                 return {"turn": {**state["turn"], "evidence": ""}}
@@ -195,10 +183,6 @@ _THINK_INSTRUCTIONS: dict[str, str] = {
         "En écrivain : transforme cette matière en un mini-récit avec un enjeu humain qui "
         "porte ta position."
     ),
-    "quantify": (
-        "En économiste : pose les ordres de grandeur du problème (coûts, bénéfices, qui "
-        "paie, qui gagne) à partir des preuves disponibles."
-    ),
     "model_tradeoff": (
         "En économiste : formule l'arbitrage coût/bénéfice que la thèse adverse ignore, "
         "et ce que révèlent les incitations des acteurs."
@@ -211,7 +195,7 @@ def make_think_node(name: str) -> NodeFactory:
 
     def factory(persona: PersonaVector) -> NodeFn:
         def node(state: ShowState, runtime: Runtime[ShowContext]) -> dict:
-            _notify(runtime, persona, name)
+            notify_step(runtime, persona, name)
             mind = state["minds"][persona.agent_id]
             text = llm.think(
                 runtime.context.model_internal or SHOW_CONFIG["model_internal"],
@@ -230,7 +214,7 @@ def make_think_node(name: str) -> NodeFactory:
 
 def make_strategize(persona: PersonaVector) -> NodeFn:
     def strategize(state: ShowState, runtime: Runtime[ShowContext]) -> dict:
-        _notify(runtime, persona, "strategize")
+        notify_step(runtime, persona, "strategize")
         mind = state["minds"][persona.agent_id]
         allowed = list(persona.tactics)
         # À chaud, les tactiques agressives passent en tête de liste.
@@ -251,7 +235,7 @@ def make_strategize(persona: PersonaVector) -> NodeFn:
 
 def make_concede_then_refute(persona: PersonaVector) -> NodeFn:
     def concede_then_refute(state: ShowState, runtime: Runtime[ShowContext]) -> dict:
-        _notify(runtime, persona, "concede_then_refute")
+        notify_step(runtime, persona, "concede_then_refute")
         mind = state["minds"][persona.agent_id]
         text = llm.think(
             runtime.context.model_internal or SHOW_CONFIG["model_internal"],
@@ -268,7 +252,7 @@ def make_concede_then_refute(persona: PersonaVector) -> NodeFn:
 
 def make_plan(persona: PersonaVector) -> NodeFn:
     def plan(state: ShowState, runtime: Runtime[ShowContext]) -> dict:
-        _notify(runtime, persona, "plan")
+        notify_step(runtime, persona, "plan")
         mind = state["minds"][persona.agent_id]
         text = llm.think(
             runtime.context.model_internal or SHOW_CONFIG["model_internal"],
@@ -283,7 +267,7 @@ def make_plan(persona: PersonaVector) -> NodeFn:
 
 def make_reflect(persona: PersonaVector) -> NodeFn:
     def reflect(state: ShowState, runtime: Runtime[ShowContext]) -> dict:
-        _notify(runtime, persona, "reflect")
+        notify_step(runtime, persona, "reflect")
         mind = state["minds"][persona.agent_id]
         draft = state["turn"].get("draft", "")
         text = llm.think(
@@ -299,7 +283,7 @@ def make_reflect(persona: PersonaVector) -> NodeFn:
 
 def make_revise_draft(persona: PersonaVector) -> NodeFn:
     def revise_draft(state: ShowState, runtime: Runtime[ShowContext]) -> dict:
-        _notify(runtime, persona, "revise_draft")
+        notify_step(runtime, persona, "revise_draft")
         mind = state["minds"][persona.agent_id]
         text = llm.think(
             runtime.context.model_internal or SHOW_CONFIG["model_internal"],
@@ -318,7 +302,7 @@ def make_revise_draft(persona: PersonaVector) -> NodeFn:
 
 def make_critic_verify(persona: PersonaVector) -> NodeFn:
     def critic_verify(state: ShowState, runtime: Runtime[ShowContext]) -> dict:
-        _notify(runtime, persona, "critic_verify")
+        notify_step(runtime, persona, "critic_verify")
         mind = state["minds"][persona.agent_id]
         text = llm.think(
             runtime.context.model_internal or SHOW_CONFIG["model_internal"],
@@ -347,7 +331,7 @@ def make_critic_verify(persona: PersonaVector) -> NodeFn:
 
 def make_self_correct(persona: PersonaVector) -> NodeFn:
     def self_correct(state: ShowState, runtime: Runtime[ShowContext]) -> dict:
-        _notify(runtime, persona, "self_correct")
+        notify_step(runtime, persona, "self_correct")
         mind = state["minds"][persona.agent_id]
         text = llm.think(
             runtime.context.model_internal or SHOW_CONFIG["model_internal"],
@@ -366,7 +350,7 @@ def make_self_correct(persona: PersonaVector) -> NodeFn:
 
 def make_recall_memory(persona: PersonaVector) -> NodeFn:
     def recall_memory(state: ShowState, runtime: Runtime[ShowContext]) -> dict:
-        _notify(runtime, persona, "recall_memory")
+        notify_step(runtime, persona, "recall_memory")
         mind = state["minds"][persona.agent_id]
         memory = {
             "beliefs": mind["beliefs"][-5:],
@@ -380,7 +364,7 @@ def make_recall_memory(persona: PersonaVector) -> NodeFn:
 
 def make_supervisor_route(persona: PersonaVector) -> NodeFn:
     def supervisor_route(state: ShowState, runtime: Runtime[ShowContext]) -> dict:
-        _notify(runtime, persona, "supervisor_route")
+        notify_step(runtime, persona, "supervisor_route")
         mind = state["minds"][persona.agent_id]
         # Worker dialectique si clash émotionnel, sinon worker preuve.
         worker = "dialectic" if mind["arousal"] > 0.5 or state["turn"].get("persuasion", 0) > 0.6 else "evidence"
@@ -393,7 +377,7 @@ def make_parallel_gather(persona: PersonaVector) -> NodeFn:
     """Simule un DAG parallèle : deux requêtes preuve fusionnées (LLMCompiler-inspired)."""
 
     def parallel_gather(state: ShowState, runtime: Runtime[ShowContext]) -> dict:
-        _notify(runtime, persona, "parallel_gather")
+        notify_step(runtime, persona, "parallel_gather")
         ctx = runtime.context
         if not ctx.enable_web_search or ctx.client is None:
             return {"turn": {**state["turn"], "evidence": ""}}

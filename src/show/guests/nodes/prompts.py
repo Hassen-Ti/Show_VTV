@@ -109,17 +109,6 @@ MONOLOGUE_SYSTEM = (
 """
 )
 
-MODERATOR_SYSTEM = (
-    BASE
-    + """
-<task>Interventions d'un animateur de débat TV français.</task>
-<output_contract>
-- French prose only, within the sentence limit given.
-- No quotes, no labels.
-</output_contract>
-"""
-)
-
 
 def describe_stance(stance: float) -> str:
     if stance > 0.6:

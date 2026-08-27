@@ -8,14 +8,14 @@ from config.show_config import HIGH_AROUSAL, SHOW_CONFIG
 from show import llm, mind as mind_algo
 from show.runtime.context import ShowContext, emit_event
 from show.guests.nodes import prompts
-from show.guests.nodes.factories import NodeFn, _notify
+from show.guests.nodes.common import NodeFn, notify_step
 from show.guests.personas.vector import PersonaVector
 from show.memory.state import ShowState, TranscriptEntry
 
 
 def make_draft(persona: PersonaVector) -> NodeFn:
     def draft(state: ShowState, runtime: Runtime[ShowContext]) -> dict:
-        _notify(runtime, persona, "draft")
+        notify_step(runtime, persona, "draft")
         mind = state["minds"][persona.agent_id]
         text = llm.think(
             runtime.context.model_internal or SHOW_CONFIG["model_internal"],
@@ -34,7 +34,7 @@ def make_draft(persona: PersonaVector) -> NodeFn:
 
 def make_voice(persona: PersonaVector) -> NodeFn:
     def voice(state: ShowState, runtime: Runtime[ShowContext]) -> dict:
-        _notify(runtime, persona, "voice")
+        notify_step(runtime, persona, "voice")
         mind = state["minds"][persona.agent_id]
         text = llm.think(
             runtime.context.model_internal or SHOW_CONFIG["model_internal"],
@@ -50,7 +50,7 @@ def make_voice(persona: PersonaVector) -> NodeFn:
 
 def make_deliver(persona: PersonaVector) -> NodeFn:
     def deliver(state: ShowState, runtime: Runtime[ShowContext]) -> dict:
-        _notify(runtime, persona, "deliver")
+        notify_step(runtime, persona, "deliver")
         ctx = runtime.context
         mind = state["minds"][persona.agent_id]
         turn = state["turn"]
