@@ -3,7 +3,8 @@
 Base : `master` après le commit foundation (carve ownership).
 Les agents cloud n'éditent **que** leur arbre. Le compositeur
 [`src/show/graph/show_graph.py`](../../src/show/graph/show_graph.py) est **figé** :
-personne ne le réécrit sauf correctif de câblage explicitement demandé.
+personne ne le réécrit sauf correctif de câblage explicitement demandé
+(ex. nœud ``decide_after_update`` pour lire ``has_earpiece(context)``).
 
 ## Contrat `ShowState` / `MindState`
 
