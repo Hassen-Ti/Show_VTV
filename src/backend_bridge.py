@@ -1,5 +1,9 @@
 """
 Pont Python ↔ QML : exécute le moteur show (LangGraph) et traduit les événements en signaux Qt.
+
+Consomme le moteur uniquement via ``run_show`` + callbacks ``emit`` / oreillette.
+Mapping UI des invités : ``guest_a`` → ``agent_one``, ``guest_b`` → ``agent_two`` ;
+le modérateur reste ``moderator``.
 """
 
 from __future__ import annotations
@@ -32,7 +36,9 @@ class ShowWorker(QThread):
     messageComplete = pyqtSignal(str, str, int)
     searchStarted = pyqtSignal(str, str)
     backstageUpdate = pyqtSignal(str)
+    # Question spectateur acceptée dans la file oreillette (avant lecture antenne).
     audienceQuestionQueued = pyqtSignal(str)
+    # Oreillette drainée par le modérateur — question présentée / en cours de lecture.
     audienceQuestionRead = pyqtSignal(str)
     errorOccurred = pyqtSignal(str)
     finished = pyqtSignal()
@@ -43,7 +49,7 @@ class ShowWorker(QThread):
         preset_key: str,
         client: OpenAI,
         *,
-        initial_earpiece: str = "",
+        initial_earpiece_queue: Optional[list[str]] = None,
     ):
         super().__init__()
         self.topic = topic
@@ -52,11 +58,17 @@ class ShowWorker(QThread):
         self.should_stop = False
         self._earpiece_lock = threading.Lock()
         self._earpiece_queue: list[str] = []
-        if initial_earpiece.strip():
-            self._earpiece_queue.append(initial_earpiece.strip())
+        for raw in initial_earpiece_queue or []:
+            cleaned = raw.strip()
+            if cleaned and len(self._earpiece_queue) < _MAX_EARPIECE_QUEUE:
+                self._earpiece_queue.append(cleaned)
 
-    def submit_earpiece(self, text: str) -> bool:
-        """Ajoute une question spectateur (max 3 en file). Renvoie False si file pleine."""
+    def submit_earpiece(self, text: str, *, announce: bool = True) -> bool:
+        """Ajoute une question spectateur (max 3 en file). Renvoie False si file pleine.
+
+        ``announce=False`` : enqueue silencieux (items déjà annoncés via le bridge
+        pendant le pré-show) pour éviter un double ``audienceQuestionQueued``.
+        """
         cleaned = text.strip()
         if not cleaned:
             return False
@@ -64,8 +76,13 @@ class ShowWorker(QThread):
             if len(self._earpiece_queue) >= _MAX_EARPIECE_QUEUE:
                 return False
             self._earpiece_queue.append(cleaned)
-        self.audienceQuestionQueued.emit(cleaned)
+        if announce:
+            self.audienceQuestionQueued.emit(cleaned)
         return True
+
+    def earpiece_depth(self) -> int:
+        with self._earpiece_lock:
+            return len(self._earpiece_queue)
 
     def _peek_earpiece(self) -> bool:
         with self._earpiece_lock:
@@ -121,6 +138,7 @@ class ShowWorker(QThread):
             return
 
         if kind == "earpiece":
+            # Moteur a drainé la file → lecture antenne (distinct de Queued).
             self.audienceQuestionRead.emit(event["text"])
             return
 
@@ -191,7 +209,9 @@ class ShowBridge(QObject):
     messageCompleted = pyqtSignal(str, str, int)
     searchStarted = pyqtSignal(str, str)
     backstageUpdate = pyqtSignal(str)
+    # Miroir worker : question acceptée en file (pré-show ou live). Capacité max 3.
     audienceQuestionQueued = pyqtSignal(str)
+    # Miroir worker : question drainée / lue à l'antenne par le modérateur.
     audienceQuestionRead = pyqtSignal(str)
     errorOccurred = pyqtSignal(str)
     debateFinished = pyqtSignal()
@@ -211,6 +231,22 @@ class ShowBridge(QObject):
         self._pending_earpiece_lock = threading.Lock()
         self._pending_earpiece_queue: list[str] = []
 
+    def _live_worker(self) -> Optional[ShowWorker]:
+        """Worker du show en cours (thread démarré *ou* encore en démarrage).
+
+        ``is_running`` est posé avant ``QThread.start()`` : pendant cette fenêtre
+        ``isRunning()`` est encore False, mais la file oreillette du worker est
+        déjà utilisable (lock + liste). Ne pas exiger ``isRunning()`` sinon les
+        questions tombent dans la file pending déjà drainée → perdues.
+        """
+        if self.is_running and self._worker is not None:
+            return self._worker
+        return None
+
+    def _pending_depth(self) -> int:
+        with self._pending_earpiece_lock:
+            return len(self._pending_earpiece_queue)
+
     @pyqtSlot(str)
     def generateTheme(self, user_topic: str) -> None:
         self._theme_worker = ThemeGenerationWorker(user_topic)
@@ -222,14 +258,19 @@ class ShowBridge(QObject):
 
     @pyqtSlot(str, result=bool)
     def submitAudienceQuestion(self, text: str) -> bool:
-        """Question du public → oreillette du modérateur (avant ou pendant le direct)."""
+        """Question du public → oreillette du modérateur (avant ou pendant le direct).
+
+        Capacité partagée : max ``_MAX_EARPIECE_QUEUE`` (3) en file pending *ou* live.
+        """
         cleaned = text.strip()
         if not cleaned:
             return False
 
-        if self.is_running and self._worker:
-            return self._worker.submit_earpiece(cleaned)
+        worker = self._live_worker()
+        if worker is not None:
+            return worker.submit_earpiece(cleaned)
 
+        # Hors antenne, ou worker encore en arrêt : file pré-show.
         with self._pending_earpiece_lock:
             if len(self._pending_earpiece_queue) >= _MAX_EARPIECE_QUEUE:
                 return False
@@ -237,9 +278,28 @@ class ShowBridge(QObject):
         self.audienceQuestionQueued.emit(cleaned)
         return True
 
+    @pyqtSlot(result=int)
+    def getEarpieceQueueDepth(self) -> int:
+        """Nombre de questions encore en file (pré-show ou worker live)."""
+        worker = self._live_worker()
+        if worker is not None:
+            return worker.earpiece_depth()
+        return self._pending_depth()
+
+    @pyqtSlot(result=int)
+    def getEarpieceQueueCapacity(self) -> int:
+        return _MAX_EARPIECE_QUEUE
+
     @pyqtSlot(str, str)
     def startDebate(self, topic: str, preset_key: str = "") -> None:
         if self.is_running:
+            return
+        # Un arrêt coopératif peut laisser le thread LLM vivant quelques secondes :
+        # ne pas démarrer un second show en parallèle.
+        if self._worker is not None and self._worker.isRunning():
+            self.errorOccurred.emit(
+                "Un show est encore en cours d'arrêt — réessayez dans un instant."
+            )
             return
 
         preset = get_preset(preset_key or "")
@@ -247,16 +307,13 @@ class ShowBridge(QObject):
         with self._pending_earpiece_lock:
             pending = list(self._pending_earpiece_queue)
             self._pending_earpiece_queue.clear()
-        initial_earpiece = pending[0] if pending else ""
 
         self._worker = ShowWorker(
             final_topic,
             preset_key or "",
             self._client,
-            initial_earpiece=initial_earpiece,
+            initial_earpiece_queue=pending,
         )
-        for extra in pending[1:]:
-            self._worker.submit_earpiece(extra)
         self._worker.messageStream.connect(self.messageStreamReceived)
         self._worker.messageComplete.connect(self.messageCompleted)
         self._worker.searchStarted.connect(self.searchStarted)
@@ -266,12 +323,11 @@ class ShowBridge(QObject):
         self._worker.errorOccurred.connect(self.errorOccurred)
         self._worker.finished.connect(self._on_debate_finished)
 
-        if initial_earpiece:
-            self.audienceQuestionQueued.emit(initial_earpiece)
-
-        self._worker.start()
+        # Marquer running *avant* start() pour que submitAudienceQuestion
+        # route vers le worker pendant le démarrage du thread.
         self.is_running = True
         self.debateStatusChanged.emit(True)
+        self._worker.start()
 
     @pyqtSlot()
     def stopDebate(self) -> None:

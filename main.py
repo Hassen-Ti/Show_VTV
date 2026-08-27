@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
-AI Show V.TV — point d'entrée : interface QML + moteur show (`src/show/`).
+AI Show V.TV — point d'entrée : interface QML + pont ``ShowBridge``.
+
+Le moteur show est consommé uniquement via le bridge (`run_show` + oreillette).
 """
 
 import os
