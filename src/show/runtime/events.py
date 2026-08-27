@@ -49,6 +49,20 @@ class EarpieceEvent(TypedDict):
     text: str
 
 
+class StepIoEvent(TypedDict):
+    """Trace lab / architecture viewer (émis par ``make_traced_node``)."""
+
+    type: Literal["step_io"]
+    agent: str
+    agent_name: str
+    step: str
+    label: str
+    llm_from: int
+    llm_to: int
+    input: dict[str, Any]
+    output: dict[str, Any]
+
+
 ShowEvent = Union[
     TurnEvent,
     ModeratorEvent,
@@ -56,10 +70,19 @@ ShowEvent = Union[
     StanceUpdateEvent,
     StepEvent,
     EarpieceEvent,
+    StepIoEvent,
 ]
 
 EMIT_EVENT_TYPES = frozenset(
-    {"turn", "moderator", "inner_monologue", "stance_update", "step", "earpiece"}
+    {
+        "turn",
+        "moderator",
+        "inner_monologue",
+        "stance_update",
+        "step",
+        "earpiece",
+        "step_io",
+    }
 )
 
 
