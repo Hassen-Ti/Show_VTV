@@ -16,8 +16,6 @@ sys.path.insert(0, str(ROOT / "src"))
 from show.personas.reflection_lab import export_philosopher_json, run_philosopher_lab
 
 OUT = ROOT / "docs" / "product"
-HTML_PATH = OUT / "philosopher_reflection_lab.html"
-JSON_PATH = OUT / "philosopher_reflection_traces.json"
 
 HTML = r"""<!DOCTYPE html>
 <html lang="fr">

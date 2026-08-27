@@ -21,8 +21,6 @@ from show.personas.benchmark_architectures import (
 from show.personas.trace import export_traces_json
 
 OUT = ROOT / "docs" / "product"
-HTML_PATH = OUT / "architecture_lab.html"
-TRACES_PATH = OUT / "architecture_traces.json"
 
 HTML_TEMPLATE = r"""<!DOCTYPE html>
 <html lang="fr">
