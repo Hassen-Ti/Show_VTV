@@ -44,8 +44,13 @@ def think(
     return (msg.content or "").strip()
 
 
-def search(client: OpenAI, model: str, query: str) -> str:
-    """Recherche web synthétisée pour un débat."""
+def search(client: OpenAI, model: str, query: str) -> Optional[str]:
+    """Recherche web synthétisée pour un débat.
+
+    Retourne le texte synthétisé, ou ``None`` si l'appel échoue / est vide.
+    Les appelants doivent traiter ``None`` comme absence de preuve (pas de
+    parsing de chaînes d'erreur localisées).
+    """
     prompt = (
         "Synthétise des faits récents et vérifiables pour un débat télévisé. "
         "Sois concis (arguments factuels, pas d'intro). Question / angle :\n"
@@ -58,6 +63,7 @@ def search(client: OpenAI, model: str, query: str) -> str:
             input=prompt,
         )
         out = getattr(response, "output_text", None) or str(response)
-        return out.strip()[:8000]
-    except Exception as e:
-        return f"Erreur lors de la recherche web: {e}"
+        text = out.strip()[:8000]
+        return text or None
+    except Exception:
+        return None

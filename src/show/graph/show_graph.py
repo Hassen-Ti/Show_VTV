@@ -2,7 +2,7 @@
 
 Topologie :
     START → moderator_open → moderator_allocate_floor
-        → (guest_a | guest_b) → update_shared_state
+        → (guest_a | guest_b) → update_shared_state → decide_after_update
         → (moderator_allocate_floor | moderator_interject | moderator_conclude)
 """
 
@@ -18,12 +18,13 @@ from config.show_config import SHOW_CONFIG
 from show.guests.personas.vector import PersonaVector
 from show.guests.subgraph import build_guest_subgraph
 from show.host.nodes import (
+    make_decide_after_update,
     make_moderator_allocate_floor,
     make_moderator_conclude,
     make_moderator_interject,
     make_moderator_open,
     make_route_after_allocate,
-    make_route_after_update,
+    route_from_decision,
 )
 from show.host.persona import MODERATOR_PERSONA, ModeratorPersona
 from show.memory.state import ShowState, initial_show_state
@@ -39,17 +40,18 @@ from show.runtime.context import (
 def _make_guest_node(persona: PersonaVector):
     """Enveloppe le sous-graphe invité pour ne renvoyer que le delta d'état.
 
-    Le transcript porte un reducer ``operator.add`` : renvoyer l'état final du
-    sous-graphe tel quel ré-appendrait les entrées héritées du parent.
+    - transcript : reducer ``operator.add`` → ne renvoyer que les entrées nouvelles ;
+    - minds : reducer ``merge_minds`` → ne renvoyer que ``{agent_id: mind}``.
     """
     compiled = build_guest_subgraph(persona)
 
     def guest_node(state: ShowState, runtime: Runtime[ShowContext]) -> dict:
         inherited = len(state["transcript"])
         out = compiled.invoke(state, context=runtime.context)
+        mind = out["minds"][persona.agent_id]
         delta = {
             "transcript": out["transcript"][inherited:],
-            "minds": out["minds"],
+            "minds": {persona.agent_id: mind},
             "turn": out["turn"],
         }
         if "pending_audience_question" in out:
@@ -63,9 +65,8 @@ def build_show_graph(
     guest_a: PersonaVector,
     guest_b: PersonaVector,
     moderator: ModeratorPersona = MODERATOR_PERSONA,
-    *,
-    peek_earpiece: Optional[EarpiecePeek] = None,
 ):
+    """Compile le graphe show. L'oreillette passe uniquement via ``ShowContext``."""
     graph = StateGraph(ShowState, context_schema=ShowContext)
     graph.add_node("moderator_open", make_moderator_open(guest_a, guest_b, moderator))
     graph.add_node(
@@ -75,6 +76,7 @@ def build_show_graph(
     graph.add_node("guest_a", _make_guest_node(guest_a))
     graph.add_node("guest_b", _make_guest_node(guest_b))
     graph.add_node("update_shared_state", make_update_shared_state(guest_a, guest_b))
+    graph.add_node("decide_after_update", make_decide_after_update(moderator))
     graph.add_node("moderator_interject", make_moderator_interject(moderator))
     graph.add_node(
         "moderator_conclude",
@@ -90,9 +92,10 @@ def build_show_graph(
     )
     graph.add_edge("guest_a", "update_shared_state")
     graph.add_edge("guest_b", "update_shared_state")
+    graph.add_edge("update_shared_state", "decide_after_update")
     graph.add_conditional_edges(
-        "update_shared_state",
-        make_route_after_update(moderator, peek_earpiece=peek_earpiece),
+        "decide_after_update",
+        route_from_decision,
         {
             "moderator_allocate_floor": "moderator_allocate_floor",
             "moderator_interject": "moderator_interject",
@@ -118,7 +121,7 @@ def run_show(
     trace_llm_cursor: Optional[Callable[[], int]] = None,
 ) -> dict[str, Any]:
     """Exécute un show complet et retourne le ShowState final."""
-    compiled = build_show_graph(guest_a, guest_b, peek_earpiece=peek_earpiece)
+    compiled = build_show_graph(guest_a, guest_b)
     state = initial_show_state(topic, [guest_a, guest_b], max_rounds)
     context = ShowContext(
         client=client,

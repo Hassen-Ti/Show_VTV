@@ -116,7 +116,7 @@ def make_listen(persona: PersonaVector) -> NodeFn:
         if audience_question:
             turn["audience_question"] = audience_question
         return {
-            "minds": {**state["minds"], persona.agent_id: mind},
+            "minds": {persona.agent_id: mind},
             "turn": turn,
             **clear_pending,
         }
@@ -148,7 +148,7 @@ def make_evidence_node(name: str) -> NodeFactory:
                 return {"turn": {**state["turn"], "evidence": ""}}
             query = _EVIDENCE_QUERIES[name](persona, state)
             result = llm.search(ctx.client, ctx.model_internal or SHOW_CONFIG["model_internal"], query)
-            if result.startswith("Erreur"):
+            if not result:
                 result = ""
             return {"turn": {**state["turn"], "evidence": result, "evidence_query": query}}
 
@@ -389,7 +389,7 @@ def make_parallel_gather(persona: PersonaVector) -> NodeFn:
         chunks = []
         for q in queries:
             result = llm.search(ctx.client, ctx.model_internal or SHOW_CONFIG["model_internal"], q)
-            if result and not result.startswith("Erreur"):
+            if result:
                 chunks.append(result)
         merged = "\n---\n".join(chunks)
         return {"turn": {**state["turn"], "evidence": merged, "evidence_query": " | ".join(queries)}}

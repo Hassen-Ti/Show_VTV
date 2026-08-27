@@ -65,6 +65,14 @@ def test_full_show_one_round(monkeypatch):
     kinds = {e["type"] for e in events}
     assert {"moderator", "turn", "inner_monologue", "stance_update", "step"} <= kinds
 
+    from show.runtime.events import validate_emit_event
+
+    for event in events:
+        validate_emit_event(event)
+
+    # Les deux minds restent présentes après deltas partiels (merge_minds).
+    assert set(result["minds"]) == {"guest_a", "guest_b"}
+
 
 if __name__ == "__main__":
     class _MP:

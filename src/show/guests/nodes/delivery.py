@@ -105,7 +105,7 @@ def make_deliver(persona: PersonaVector) -> NodeFn:
         )
         return {
             "transcript": [entry],
-            "minds": {**state["minds"], persona.agent_id: mind},
+            "minds": {persona.agent_id: mind},
             "turn": {**turn, "final": final},
         }
 

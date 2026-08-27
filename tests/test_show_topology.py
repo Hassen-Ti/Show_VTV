@@ -121,6 +121,7 @@ def test_show_graph_compiles():
         "guest_a",
         "guest_b",
         "update_shared_state",
+        "decide_after_update",
         "moderator_interject",
         "moderator_conclude",
     ):
