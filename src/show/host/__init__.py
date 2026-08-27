@@ -1,4 +1,4 @@
-"""Feature animateur : Mr Bullshit (hors sous-graphe invité)."""
+"""Feature animateur : Mr Bullshit / Le Scheduler (hors sous-graphe invité)."""
 
 from show.host.persona import MODERATOR_PERSONA, ModeratorPersona
 
