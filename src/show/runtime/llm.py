@@ -11,18 +11,21 @@ from openai import OpenAI
 from config.show_config import SHOW_CONFIG
 from utils.openai_completion import chat_token_kwargs
 
+# Cache ChatOpenAI par (model, temperature, tokens, effort) — un constructeur
+# par clé, pas un client neuf à chaque ``think()``.
+_chat_models: dict[tuple, ChatOpenAI] = {}
 
-def think(
+
+def _get_chat_model(
     model: str,
-    system: str,
-    user: str,
-    *,
     temperature: float,
-    max_tokens: Optional[int] = None,
-) -> str:
-    """Appel LLM interne (raisonnement, jamais diffusé tel quel)."""
-    tokens = max_tokens or int(SHOW_CONFIG.get("internal_max_tokens", 160))
-    effort = SHOW_CONFIG.get("reasoning_effort")
+    tokens: int,
+    effort: Optional[str],
+) -> ChatOpenAI:
+    key = (model, temperature, tokens, effort or "")
+    cached = _chat_models.get(key)
+    if cached is not None:
+        return cached
     llm_kwargs: dict = {
         "model": model,
         "temperature": temperature,
@@ -35,6 +38,28 @@ def think(
     except TypeError:
         llm_kwargs.pop("reasoning_effort", None)
         llm = ChatOpenAI(**llm_kwargs)
+        key = (model, temperature, tokens, "")
+    _chat_models[key] = llm
+    return llm
+
+
+def clear_chat_model_cache() -> None:
+    """Vide le cache (tests)."""
+    _chat_models.clear()
+
+
+def think(
+    model: str,
+    system: str,
+    user: str,
+    *,
+    temperature: float,
+    max_tokens: Optional[int] = None,
+) -> str:
+    """Appel LLM interne (raisonnement, jamais diffusé tel quel)."""
+    tokens = max_tokens or int(SHOW_CONFIG.get("internal_max_tokens", 160))
+    effort = SHOW_CONFIG.get("reasoning_effort")
+    llm = _get_chat_model(model, temperature, tokens, effort if isinstance(effort, str) else None)
     msg = llm.invoke(
         [
             SystemMessage(content=system),
