@@ -7,9 +7,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from config.show_presets import PRESET_KEYS, SHOW_PRESETS, build_guests, get_preset
-from show.graph.guest_subgraph import build_guest_subgraph, route_concession
+from show.graph.guest_subgraph import build_guest_subgraph, needed_nodes, route_concession
 from show.graph.show_graph import build_show_graph
 from show.guests.nodes.factories import route_critic_gate, route_supervisor
+from show.guests.personas.architectures import get_architecture
 from show.personas.architectures import ARCHITECTURES
 from show.personas.registry import DOMAINS, make_guest
 
@@ -128,9 +129,36 @@ def test_show_graph_compiles():
         assert expected in names
 
 
+def test_react_provocateur_omits_unused_post_draft_nodes():
+    """ReAct n'enregistre pas reflect / critic / self_correct (nœuds morts)."""
+    guest = make_guest("provocateur", "physicien", "IA", 0.8, agent_id="g")
+    assert guest.architecture_id == "react"
+    names = _node_names(build_guest_subgraph(guest))
+    assert {"reflect", "revise_draft", "critic_verify", "self_correct"}.isdisjoint(names)
+    assert COMMON_TAIL <= names
+    # Pas de workers dialéctiques hors path ReAct.
+    assert "reframe_concept" not in names
+    assert "find_contradiction" not in names
+
+
+def test_needed_nodes_matches_compiled_graph():
+    for arch_id in ("react", "reflexion", "supervisor_worker", "self_rag"):
+        guest = make_guest(
+            "cerebral",
+            "physicien",
+            "lab",
+            0.5,
+            agent_id="g",
+            architecture_id=arch_id,
+        )
+        spec = get_architecture(arch_id)
+        assert _node_names(build_guest_subgraph(guest)) == needed_nodes(guest, spec)
+
+
 if __name__ == "__main__":
     test_each_domain_compiles_with_its_own_sequence()
     test_domain_topologies_are_distinct()
     test_route_concession()
     test_show_graph_compiles()
+    test_react_provocateur_omits_unused_post_draft_nodes()
     print("OK: test_show_topology")
