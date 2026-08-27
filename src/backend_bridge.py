@@ -232,10 +232,15 @@ class ShowBridge(QObject):
         self._pending_earpiece_queue: list[str] = []
 
     def _live_worker(self) -> Optional[ShowWorker]:
-        """Worker actif réellement en cours (évite de pousser vers un thread mort)."""
-        worker = self._worker
-        if worker is not None and worker.isRunning():
-            return worker
+        """Worker du show en cours (thread démarré *ou* encore en démarrage).
+
+        ``is_running`` est posé avant ``QThread.start()`` : pendant cette fenêtre
+        ``isRunning()`` est encore False, mais la file oreillette du worker est
+        déjà utilisable (lock + liste). Ne pas exiger ``isRunning()`` sinon les
+        questions tombent dans la file pending déjà drainée → perdues.
+        """
+        if self.is_running and self._worker is not None:
+            return self._worker
         return None
 
     def _pending_depth(self) -> int:
@@ -262,7 +267,7 @@ class ShowBridge(QObject):
             return False
 
         worker = self._live_worker()
-        if self.is_running and worker is not None:
+        if worker is not None:
             return worker.submit_earpiece(cleaned)
 
         # Hors antenne, ou worker encore en arrêt : file pré-show.
@@ -277,7 +282,7 @@ class ShowBridge(QObject):
     def getEarpieceQueueDepth(self) -> int:
         """Nombre de questions encore en file (pré-show ou worker live)."""
         worker = self._live_worker()
-        if self.is_running and worker is not None:
+        if worker is not None:
             return worker.earpiece_depth()
         return self._pending_depth()
 
