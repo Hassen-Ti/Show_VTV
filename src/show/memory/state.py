@@ -37,7 +37,7 @@ from __future__ import annotations
 import operator
 from typing import Annotated, Any, TypedDict
 
-from show.guests.personas.vector import PersonaVector
+from show.memory.traits import MindTraits
 
 
 class TranscriptEntry(TypedDict):
@@ -106,7 +106,7 @@ def _clamp(value: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, value))
 
 
-def initial_mind(persona: PersonaVector) -> MindState:
+def initial_mind(persona: MindTraits) -> MindState:
     return MindState(
         stance=persona.initial_stance,
         conviction=persona.initial_conviction,
@@ -142,7 +142,7 @@ def snapshot_minds(minds: dict[str, MindState]) -> dict[str, MindState]:
 
 
 def seed_minds_from_prior(
-    guests: list[PersonaVector],
+    guests: list[MindTraits],
     prior: dict[str, MindState] | None = None,
 ) -> dict[str, MindState]:
     """Construit les minds d'un nouvel épisode.
@@ -176,7 +176,7 @@ def seed_minds_from_prior(
 
 def initial_show_state(
     topic: str,
-    guests: list[PersonaVector],
+    guests: list[MindTraits],
     max_rounds: int,
     *,
     prior_minds: dict[str, MindState] | None = None,

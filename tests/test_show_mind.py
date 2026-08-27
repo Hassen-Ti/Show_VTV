@@ -267,6 +267,31 @@ def test_update_shared_state_missing_mind_and_empty_history():
     assert out["tension"] == compute_tension(out["minds"], [])
 
 
+def test_mind_traits_protocol_accepts_simple_namespace():
+    """memory ne dépend plus de PersonaVector — un duck-type suffit."""
+    traits = SimpleNamespace(
+        agent_id="x",
+        stubbornness=0.5,
+        concession_rate=0.2,
+        arousal_gain=0.4,
+        affective_baseline=0.1,
+        temperature_voice=1.0,
+        sentence_max=3,
+        initial_stance=0.3,
+        initial_conviction=0.7,
+    )
+    mind = initial_mind(traits)
+    assert mind["stance"] == 0.3
+    assert mind["conviction"] == 0.7
+    revised = revise_stance(mind, traits, opponent_stance=-0.5, persuasion=0.8)
+    assert revised["stance"] < mind["stance"]
+    from show.memory.traits import AGGRESSIVE_TACTICS, MindTraits
+    from show.personas.vector import AGGRESSIVE_TACTICS as guest_tactics
+
+    assert isinstance(traits, MindTraits)
+    assert guest_tactics is AGGRESSIVE_TACTICS
+
+
 if __name__ == "__main__":
     for fn in list(globals().values()):
         if callable(fn) and getattr(fn, "__name__", "").startswith("test_"):

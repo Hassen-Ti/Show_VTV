@@ -14,13 +14,13 @@ from __future__ import annotations
 
 from langgraph.runtime import Runtime
 
-from show.guests.personas.vector import PersonaVector
 from show.memory import mind as mind_algo
 from show.memory.state import ShowState
+from show.memory.traits import MindTraits
 from show.runtime.context import ShowContext, emit_event
 
 
-def make_update_shared_state(guest_a: PersonaVector, guest_b: PersonaVector):
+def make_update_shared_state(guest_a: MindTraits, guest_b: MindTraits):
     guests = (guest_a, guest_b)
 
     def update_shared_state(state: ShowState, runtime: Runtime[ShowContext]) -> dict:
