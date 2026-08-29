@@ -22,10 +22,13 @@ from show.memory.state import (
     seed_minds_from_prior,
     snapshot_minds,
 )
+from show.memory.traits import AGGRESSIVE_TACTICS, MindTraits
 from show.memory.update import make_update_shared_state
 
 __all__ = [
+    "AGGRESSIVE_TACTICS",
     "MindState",
+    "MindTraits",
     "ShowState",
     "TranscriptEntry",
     "appraise",

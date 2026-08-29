@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, fields
 
+# Canonical : ``show.memory.traits`` — réexport compat pour guests / benchmarks.
+from show.memory.traits import AGGRESSIVE_TACTICS
+
 # Tactiques disponibles sur le plateau (le registre en attribue un sous-ensemble
 # par personnalité ; `strategize` ne peut choisir qu'à l'intérieur de ce sous-ensemble).
 SHOW_TACTICS = frozenset(
@@ -18,11 +21,6 @@ SHOW_TACTICS = frozenset(
         "concede_then_refute",
         "reframe",
     }
-)
-
-# Tactiques considérées comme agressives (alimentent la tension du plateau).
-AGGRESSIVE_TACTICS = frozenset(
-    {"clash", "moral_attack", "expose_hypocrisy", "contradiction"}
 )
 
 # Nœuds cognitifs implémentés dans show.nodes (registre de factories).

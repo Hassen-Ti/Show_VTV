@@ -17,8 +17,8 @@ from config.show_config import (
     TENSION_ATTACK_WEIGHT,
     VALENCE_RECOVERY,
 )
-from show.guests.personas.vector import AGGRESSIVE_TACTICS, PersonaVector
 from show.memory.state import MindState, TranscriptEntry
+from show.memory.traits import AGGRESSIVE_TACTICS, MindTraits
 
 
 def _clamp(value: float, lo: float, hi: float) -> float:
@@ -48,7 +48,7 @@ def _copy_mind(mind: MindState) -> MindState:
 
 def revise_stance(
     mind: MindState,
-    persona: PersonaVector,
+    persona: MindTraits,
     opponent_stance: float,
     persuasion: float,
 ) -> MindState:
@@ -82,7 +82,7 @@ def update_conviction(mind: MindState, persuasion: float, countered: bool) -> Mi
     return new
 
 
-def should_concede(persuasion: float, persona: PersonaVector, rand: float) -> bool:
+def should_concede(persuasion: float, persona: MindTraits, rand: float) -> bool:
     """Concession structurelle : argument trop fort, ou trait de caractère.
 
     ``rand`` est attendu dans [0, 1] (tirage uniforme) ; hors bornes → clamp.
@@ -92,7 +92,7 @@ def should_concede(persuasion: float, persona: PersonaVector, rand: float) -> bo
     return p > CONCEDE_THRESHOLD or r < persona.concession_rate
 
 
-def appraise(mind: MindState, persona: PersonaVector, event: str) -> MindState:
+def appraise(mind: MindState, persona: MindTraits, event: str) -> MindState:
     """Appraisal émotionnel (valence / arousal) selon l'événement du tour.
 
     Événements : attacked_personal | attacked_moral | conceded_to_me | argument.
@@ -115,7 +115,7 @@ def appraise(mind: MindState, persona: PersonaVector, event: str) -> MindState:
     return new
 
 
-def decay(mind: MindState, persona: PersonaVector) -> MindState:
+def decay(mind: MindState, persona: MindTraits) -> MindState:
     """Fin de round : l'excitation retombe, l'humeur revient vers la baseline."""
     new = _copy_mind(mind)
     new["arousal"] = _clamp(mind["arousal"] * AROUSAL_DECAY, 0.0, 1.0)
@@ -127,12 +127,12 @@ def decay(mind: MindState, persona: PersonaVector) -> MindState:
     return new
 
 
-def effective_voice_temperature(mind: MindState, persona: PersonaVector) -> float:
+def effective_voice_temperature(mind: MindState, persona: MindTraits) -> float:
     """Plus l'agent est à chaud, plus sa voix est débridée."""
     return persona.temperature_voice + 0.4 * mind["arousal"]
 
 
-def effective_sentence_max(mind: MindState, persona: PersonaVector, high_arousal: float) -> int:
+def effective_sentence_max(mind: MindState, persona: MindTraits, high_arousal: float) -> int:
     """À chaud, les répliques deviennent plus sèches (jamais sous 1 phrase)."""
     if mind["arousal"] > high_arousal:
         return max(1, int(persona.sentence_max) - 1)

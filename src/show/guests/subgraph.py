@@ -3,6 +3,9 @@
 Chaque persona embarque une architecture agentique (ReAct, Reflexion, Plan-and-Execute…)
 et un domaine qui choisit les nœuds de preuve / pensée spécialisés via
 ``domain_worker_nodes`` (registre — pas de table dupliquée ici).
+
+Seuls les nœuds **atteignables** sont enregistrés (pas de reflect/critic morts
+sur un graphe ReAct simple).
 """
 
 from __future__ import annotations
@@ -11,23 +14,55 @@ from itertools import pairwise
 
 from langgraph.graph import END, START, StateGraph
 
-from show.runtime.context import ShowContext
 from show.guests.nodes import NODE_REGISTRY
 from show.guests.nodes.factories import route_critic_gate, route_supervisor
-from show.guests.personas.trace import make_traced_node
-from show.guests.personas.architectures import get_architecture
+from show.guests.personas.architectures import ArchitectureSpec, get_architecture
 from show.guests.personas.registry import domain_worker_nodes
+from show.guests.personas.trace import make_traced_node
 from show.guests.personas.vector import PersonaVector, validate
 from show.memory.state import ShowState
+from show.runtime.context import ShowContext
+
+_DELIVERY = frozenset({"concede_then_refute", "draft", "voice", "deliver"})
 
 
 def route_concession(state: ShowState) -> str:
     return "concede_then_refute" if state["turn"].get("must_concede") else "draft"
 
 
+def _post_draft_nodes(spec: ArchitectureSpec) -> set[str]:
+    if spec.post_draft == "reflect":
+        return {"reflect", "revise_draft"}
+    if spec.post_draft == "self_correct":
+        return {"self_correct"}
+    if spec.post_draft == "critic_gate":
+        return {"critic_verify", "revise_draft"}
+    return set()
+
+
+def needed_nodes(persona: PersonaVector, spec: ArchitectureSpec) -> set[str]:
+    """Ensemble exact des nœuds à enregistrer pour cette persona."""
+    path = list(persona.cognitive_sequence)
+    if "strategize" not in path:
+        path.append("strategize")
+    needed: set[str] = set(path) | set(_DELIVERY) | _post_draft_nodes(spec)
+
+    if spec.uses_supervisor:
+        worker_evidence, worker_think = domain_worker_nodes(persona.domain)
+        needed |= {
+            "listen",
+            "supervisor_route",
+            "strategize",
+            worker_evidence,
+            worker_think,
+            "reframe_concept",
+            "find_contradiction",
+        }
+    return needed
+
+
 def _register_nodes(graph: StateGraph, persona: PersonaVector, names: set[str]) -> None:
-    delivery = {"concede_then_refute", "draft", "voice", "deliver"}
-    for name in names | delivery:
+    for name in names:
         if name not in graph.nodes:
             graph.add_node(name, make_traced_node(persona, name, NODE_REGISTRY[name](persona)))
 
@@ -73,16 +108,10 @@ def build_guest_subgraph(persona: PersonaVector):
     if "strategize" not in path:
         path.append("strategize")
 
-    worker_evidence, worker_think = domain_worker_nodes(persona.domain)
-
-    extra = {
-        "concede_then_refute", "draft", "voice", "deliver",
-        "reflect", "revise_draft", "critic_verify", "self_correct",
-        worker_evidence, worker_think, "reframe_concept", "find_contradiction",
-    }
-    _register_nodes(graph, persona, set(path) | extra)
+    _register_nodes(graph, persona, needed_nodes(persona, spec))
 
     if spec.uses_supervisor:
+        worker_evidence, worker_think = domain_worker_nodes(persona.domain)
         graph.add_edge(START, "listen")
         graph.add_edge("listen", "supervisor_route")
         graph.add_conditional_edges(
