@@ -22,7 +22,7 @@ seulement, `total=False`). Les autres branches consomment le contrat :
 Owned:
 
 - `src/show/guests/` (personas, nodes, subgraph, presets)
-- shims `src/show/personas/`, `src/show/nodes/`, `src/show/graph/guest_subgraph.py`, `config/show_presets.py` (réexports seulement)
+- `config/show_config.py` (réexport config show si besoin)
 
 Interdit : `ShowState` / `MindState`, nœuds modérateur, QML, CI.
 
@@ -60,7 +60,7 @@ Owned:
 
 - `.github/workflows/`
 - `tests/` (organisation, pas de logique show hors tests)
-- `scripts/` (benchmarks / viewers)
+- `scripts/create_avatars.py`
 
 Interdit : logique show hors tests / scripts de mesure.
 

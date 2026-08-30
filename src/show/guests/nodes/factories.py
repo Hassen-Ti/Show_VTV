@@ -17,8 +17,9 @@ from langgraph.runtime import Runtime
 
 from show.parsing import first_allowed_tactic, parse_labeled_lines
 from config.show_config import HIGH_AROUSAL, SHOW_CONFIG
-from show import llm, mind as mind_algo
-from show.runtime.context import ShowContext
+import show.memory.mind as mind_algo
+import show.runtime.llm as llm
+from show.runtime.context import ShowContext, internal_model
 from show.guests.nodes import prompts
 from show.guests.nodes.common import NodeFactory, NodeFn, STEP_LABELS, notify_step
 from show.guests.personas.vector import AGGRESSIVE_TACTICS, PersonaVector
@@ -78,7 +79,7 @@ def make_listen(persona: PersonaVector) -> NodeFn:
             return {"turn": turn, **clear_pending}
 
         text = llm.think(
-            runtime.context.model_internal or SHOW_CONFIG["model_internal"],
+            internal_model(runtime.context),
             prompts.LISTEN_SYSTEM,
             prompts.listen_prompt(
                 opponent["text"],
@@ -147,10 +148,8 @@ def make_evidence_node(name: str) -> NodeFactory:
             if not ctx.enable_web_search or ctx.client is None:
                 return {"turn": {**state["turn"], "evidence": ""}}
             query = _EVIDENCE_QUERIES[name](persona, state)
-            result = llm.search(ctx.client, ctx.model_internal or SHOW_CONFIG["model_internal"], query)
-            if not result:
-                result = ""
-            return {"turn": {**state["turn"], "evidence": result, "evidence_query": query}}
+            result = llm.search(ctx.client, internal_model(ctx), query)
+            return {"turn": {**state["turn"], "evidence": result or "", "evidence_query": query}}
 
         return node
 
@@ -198,7 +197,7 @@ def make_think_node(name: str) -> NodeFactory:
             notify_step(runtime, persona, name)
             mind = state["minds"][persona.agent_id]
             text = llm.think(
-                runtime.context.model_internal or SHOW_CONFIG["model_internal"],
+                internal_model(runtime.context),
                 prompts.THINK_SYSTEM,
                 prompts.think_prompt(instruction, persona, mind, state["topic"], state["turn"]),
                 temperature=persona.temperature_facts,
@@ -221,7 +220,7 @@ def make_strategize(persona: PersonaVector) -> NodeFn:
         if mind["arousal"] > HIGH_AROUSAL:
             allowed.sort(key=lambda t: 0 if t in AGGRESSIVE_TACTICS else 1)
         text = llm.think(
-            runtime.context.model_internal or SHOW_CONFIG["model_internal"],
+            internal_model(runtime.context),
             prompts.TACTIC_SYSTEM,
             prompts.tactic_prompt(persona, state["turn"], allowed),
             temperature=persona.temperature_facts,
@@ -238,7 +237,7 @@ def make_concede_then_refute(persona: PersonaVector) -> NodeFn:
         notify_step(runtime, persona, "concede_then_refute")
         mind = state["minds"][persona.agent_id]
         text = llm.think(
-            runtime.context.model_internal or SHOW_CONFIG["model_internal"],
+            internal_model(runtime.context),
             prompts.CONCEDE_SYSTEM,
             prompts.concede_prompt(persona, mind, state["topic"], state["turn"]),
             temperature=persona.temperature_facts,
@@ -255,7 +254,7 @@ def make_plan(persona: PersonaVector) -> NodeFn:
         notify_step(runtime, persona, "plan")
         mind = state["minds"][persona.agent_id]
         text = llm.think(
-            runtime.context.model_internal or SHOW_CONFIG["model_internal"],
+            internal_model(runtime.context),
             prompts.PLAN_SYSTEM,
             prompts.plan_prompt(persona, mind, state["topic"], state["turn"]),
             temperature=persona.temperature_facts,
@@ -271,7 +270,7 @@ def make_reflect(persona: PersonaVector) -> NodeFn:
         mind = state["minds"][persona.agent_id]
         draft = state["turn"].get("draft", "")
         text = llm.think(
-            runtime.context.model_internal or SHOW_CONFIG["model_internal"],
+            internal_model(runtime.context),
             prompts.REFLECT_SYSTEM,
             prompts.reflect_prompt(persona, mind, state["topic"], draft),
             temperature=persona.temperature_facts,
@@ -286,7 +285,7 @@ def make_revise_draft(persona: PersonaVector) -> NodeFn:
         notify_step(runtime, persona, "revise_draft")
         mind = state["minds"][persona.agent_id]
         text = llm.think(
-            runtime.context.model_internal or SHOW_CONFIG["model_internal"],
+            internal_model(runtime.context),
             prompts.CORRECT_SYSTEM,
             prompts.correct_prompt(
                 persona, mind, state["topic"],
@@ -305,7 +304,7 @@ def make_critic_verify(persona: PersonaVector) -> NodeFn:
         notify_step(runtime, persona, "critic_verify")
         mind = state["minds"][persona.agent_id]
         text = llm.think(
-            runtime.context.model_internal or SHOW_CONFIG["model_internal"],
+            internal_model(runtime.context),
             prompts.CRITIC_SYSTEM,
             prompts.critic_prompt(persona, mind, state["topic"], state["turn"]),
             temperature=0.2,
@@ -334,7 +333,7 @@ def make_self_correct(persona: PersonaVector) -> NodeFn:
         notify_step(runtime, persona, "self_correct")
         mind = state["minds"][persona.agent_id]
         text = llm.think(
-            runtime.context.model_internal or SHOW_CONFIG["model_internal"],
+            internal_model(runtime.context),
             prompts.CORRECT_SYSTEM,
             prompts.correct_prompt(
                 persona, mind, state["topic"],
@@ -388,7 +387,7 @@ def make_parallel_gather(persona: PersonaVector) -> NodeFn:
         ]
         chunks = []
         for q in queries:
-            result = llm.search(ctx.client, ctx.model_internal or SHOW_CONFIG["model_internal"], q)
+            result = llm.search(ctx.client, internal_model(ctx), q)
             if result:
                 chunks.append(result)
         merged = "\n---\n".join(chunks)

@@ -38,14 +38,9 @@ def make_update_shared_state(guest_a: MindTraits, guest_b: MindTraits):
         tension = mind_algo.compute_tension(minds, round_entries)
         prior_history = state.get("stance_history") or {}
         stance_history = {
-            agent_id: list(history) + [minds[agent_id]["stance"]]
-            for agent_id, history in prior_history.items()
-            if agent_id in minds
+            agent_id: list(prior_history.get(agent_id, [])) + [mind["stance"]]
+            for agent_id, mind in minds.items()
         }
-        # Agents présents dans minds mais absents de l'historique → seed d'une série.
-        for agent_id, mind in minds.items():
-            if agent_id not in stance_history:
-                stance_history[agent_id] = [mind["stance"]]
 
         emit_event(
             runtime.context,

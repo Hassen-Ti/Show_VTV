@@ -6,9 +6,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-import show.llm
+import show.runtime.llm as llm
 from show.graph.show_graph import run_show
-from show.personas.registry import make_guest
+from show.guests.personas.registry import make_guest
 
 
 def fake_think(model, system, user, *, temperature, max_tokens=None):
@@ -22,8 +22,8 @@ def fake_think(model, system, user, *, temperature, max_tokens=None):
 
 
 def test_earpiece_opening_and_live(monkeypatch):
-    monkeypatch.setattr(show.llm, "think", fake_think)
-    monkeypatch.setattr(show.llm, "search", lambda client, model, query: "Preuve simulée 2025.")
+    monkeypatch.setattr(llm, "think", fake_think)
+    monkeypatch.setattr(llm, "search", lambda client, model, query: "Preuve simulée 2025.")
 
     guest_a = make_guest("provocateur", "physicien", "quantique", 0.8, agent_id="guest_a")
     guest_b = make_guest("diplomate", "philosophe", "éthique", -0.6, agent_id="guest_b")
@@ -63,8 +63,8 @@ def test_live_earpiece_reaches_next_guest_prompt(monkeypatch):
         captured.append(user)
         return fake_think(model, system, user, temperature=temperature, max_tokens=max_tokens)
 
-    monkeypatch.setattr(show.llm, "think", capturing_think)
-    monkeypatch.setattr(show.llm, "search", lambda client, model, query: "Preuve simulée 2025.")
+    monkeypatch.setattr(llm, "think", capturing_think)
+    monkeypatch.setattr(llm, "search", lambda client, model, query: "Preuve simulée 2025.")
 
     guest_a = make_guest("provocateur", "physicien", "quantique", 0.8, agent_id="guest_a")
     guest_b = make_guest("diplomate", "philosophe", "éthique", -0.6, agent_id="guest_b")

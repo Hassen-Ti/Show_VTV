@@ -10,9 +10,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from show.guests.nodes import NODE_REGISTRY
-from show.personas.architectures import ARCHITECTURES, PERSONALITY_ARCHITECTURE
-from show.personas.registry import DOMAINS, PERSONALITIES, domain_worker_nodes, make_guest
-from show.personas.vector import COGNITIVE_NODES, validate
+from show.guests.personas.architectures import ARCHITECTURES, PERSONALITY_ARCHITECTURE
+from show.guests.personas.registry import DOMAINS, PERSONALITIES, domain_worker_nodes, make_guest
+from show.guests.personas.vector import COGNITIVE_NODES, validate
 
 
 def test_all_combinations_are_valid():

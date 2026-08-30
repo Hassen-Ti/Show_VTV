@@ -5,8 +5,9 @@ from __future__ import annotations
 from langgraph.runtime import Runtime
 
 from config.show_config import HIGH_AROUSAL, SHOW_CONFIG
-from show import llm, mind as mind_algo
-from show.runtime.context import ShowContext, emit_event
+import show.memory.mind as mind_algo
+import show.runtime.llm as llm
+from show.runtime.context import ShowContext, delivery_model, emit_event, internal_model
 from show.guests.nodes import prompts
 from show.guests.nodes.common import NodeFn, notify_step
 from show.guests.personas.vector import PersonaVector
@@ -18,7 +19,7 @@ def make_draft(persona: PersonaVector) -> NodeFn:
         notify_step(runtime, persona, "draft")
         mind = state["minds"][persona.agent_id]
         text = llm.think(
-            runtime.context.model_internal or SHOW_CONFIG["model_internal"],
+            internal_model(runtime.context),
             prompts.DRAFT_SYSTEM,
             prompts.draft_prompt(persona, mind, state["topic"], state["turn"]),
             temperature=persona.temperature_facts,
@@ -37,7 +38,7 @@ def make_voice(persona: PersonaVector) -> NodeFn:
         notify_step(runtime, persona, "voice")
         mind = state["minds"][persona.agent_id]
         text = llm.think(
-            runtime.context.model_internal or SHOW_CONFIG["model_internal"],
+            internal_model(runtime.context),
             prompts.VOICE_SYSTEM,
             prompts.voice_prompt(persona, mind, state["topic"], state["turn"].get("draft", "")),
             temperature=mind_algo.effective_voice_temperature(mind, persona),
@@ -57,7 +58,7 @@ def make_deliver(persona: PersonaVector) -> NodeFn:
         sentence_max = mind_algo.effective_sentence_max(mind, persona, HIGH_AROUSAL)
 
         final = llm.think(
-            ctx.model_delivery or SHOW_CONFIG["model_delivery"],
+            delivery_model(ctx),
             prompts.DELIVER_SYSTEM,
             prompts.deliver_prompt(turn.get("voiced", turn.get("draft", "")), sentence_max),
             temperature=mind_algo.effective_voice_temperature(mind, persona),
@@ -65,7 +66,7 @@ def make_deliver(persona: PersonaVector) -> NodeFn:
         ) or turn.get("voiced") or turn.get("draft") or ""
 
         monologue = llm.think(
-            ctx.model_internal or SHOW_CONFIG["model_internal"],
+            internal_model(ctx),
             prompts.MONOLOGUE_SYSTEM,
             prompts.monologue_prompt(persona, mind, state["topic"], final),
             temperature=persona.temperature_voice,

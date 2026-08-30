@@ -24,35 +24,36 @@ from show.memory.state import ShowState
 from show.runtime.context import ShowContext
 
 _DELIVERY = frozenset({"concede_then_refute", "draft", "voice", "deliver"})
+_POST_DRAFT_NODES = {
+    "reflect": frozenset({"reflect", "revise_draft"}),
+    "self_correct": frozenset({"self_correct"}),
+    "critic_gate": frozenset({"critic_verify", "revise_draft"}),
+}
 
 
 def route_concession(state: ShowState) -> str:
     return "concede_then_refute" if state["turn"].get("must_concede") else "draft"
 
 
+def _cognitive_path(persona: PersonaVector) -> list[str]:
+    path = list(persona.cognitive_sequence)
+    if "strategize" not in path:
+        path.append("strategize")
+    return path
+
+
 def _post_draft_nodes(spec: ArchitectureSpec) -> set[str]:
-    if spec.post_draft == "reflect":
-        return {"reflect", "revise_draft"}
-    if spec.post_draft == "self_correct":
-        return {"self_correct"}
-    if spec.post_draft == "critic_gate":
-        return {"critic_verify", "revise_draft"}
-    return set()
+    return set(_POST_DRAFT_NODES.get(spec.post_draft, ()))
 
 
 def needed_nodes(persona: PersonaVector, spec: ArchitectureSpec) -> set[str]:
     """Ensemble exact des nœuds à enregistrer pour cette persona."""
-    path = list(persona.cognitive_sequence)
-    if "strategize" not in path:
-        path.append("strategize")
-    needed: set[str] = set(path) | set(_DELIVERY) | _post_draft_nodes(spec)
-
+    needed = set(_cognitive_path(persona)) | _DELIVERY | _post_draft_nodes(spec)
     if spec.uses_supervisor:
         worker_evidence, worker_think = domain_worker_nodes(persona.domain)
         needed |= {
             "listen",
             "supervisor_route",
-            "strategize",
             worker_evidence,
             worker_think,
             "reframe_concept",
@@ -104,10 +105,7 @@ def build_guest_subgraph(persona: PersonaVector):
     spec = get_architecture(persona.architecture_id)
     graph = StateGraph(ShowState, context_schema=ShowContext)
 
-    path = list(persona.cognitive_sequence)
-    if "strategize" not in path:
-        path.append("strategize")
-
+    path = _cognitive_path(persona)
     _register_nodes(graph, persona, needed_nodes(persona, spec))
 
     if spec.uses_supervisor:

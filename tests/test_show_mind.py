@@ -8,7 +8,7 @@ from types import SimpleNamespace
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from show.mind import (
+from show.memory.mind import (
     appraise,
     compute_tension,
     decay,
@@ -22,11 +22,11 @@ from show.memory.state import (
     initial_show_state,
     seed_minds_from_prior,
     snapshot_minds,
+    initial_mind,
 )
 from show.memory.update import make_update_shared_state
-from show.personas.registry import make_guest
+from show.guests.personas.registry import make_guest
 from show.runtime.context import ShowContext
-from show.state import initial_mind
 
 
 def _guest(**overrides):
@@ -286,7 +286,7 @@ def test_mind_traits_protocol_accepts_simple_namespace():
     revised = revise_stance(mind, traits, opponent_stance=-0.5, persuasion=0.8)
     assert revised["stance"] < mind["stance"]
     from show.memory.traits import AGGRESSIVE_TACTICS, MindTraits
-    from show.personas.vector import AGGRESSIVE_TACTICS as guest_tactics
+    from show.guests.personas.vector import AGGRESSIVE_TACTICS as guest_tactics
 
     assert isinstance(traits, MindTraits)
     assert guest_tactics is AGGRESSIVE_TACTICS

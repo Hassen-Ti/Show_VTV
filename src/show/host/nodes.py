@@ -18,8 +18,7 @@ from typing import Optional
 
 from langgraph.runtime import Runtime
 
-from config.show_config import SHOW_CONFIG
-from show import llm
+import show.runtime.llm as llm
 from show.guests.personas.vector import PersonaVector
 from show.host.persona import ModeratorPersona
 from show.host.prompts import MODERATOR_SYSTEM
@@ -30,6 +29,7 @@ from show.runtime.context import (
     drain_earpiece,
     emit_event,
     has_earpiece,
+    internal_model,
 )
 
 
@@ -54,7 +54,7 @@ def _moderator_say(
 ) -> str:
     limit = moderator.sentence_max if sentence_max is None else sentence_max
     return llm.think(
-        context.model_internal or SHOW_CONFIG["model_internal"],
+        internal_model(context),
         MODERATOR_SYSTEM,
         (
             f"<identity>Tu es {moderator.name}, {moderator.style}.</identity>\n"

@@ -18,8 +18,8 @@ from openai import OpenAI
 from PyQt6.QtCore import QObject, QThread, pyqtSignal, pyqtSlot
 
 from config.show_config import SHOW_CONFIG
-from config.show_presets import PRESET_KEYS, build_guests, get_preset, guest_names
-from show import llm
+from show.guests.presets import PRESET_KEYS, build_guests, get_preset, guest_names
+import show.runtime.llm as llm
 from show.graph.show_graph import run_show
 
 _AGENT_UI = {"guest_a": "agent_one", "guest_b": "agent_two"}
@@ -149,6 +149,7 @@ class ShowWorker(QThread):
             self.backstageUpdate.emit(
                 f"📊 Tension {tension:.2f} | positions {', '.join(parts)}"
             )
+            return
 
     def run(self) -> None:
         try:

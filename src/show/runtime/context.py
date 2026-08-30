@@ -8,6 +8,7 @@ from typing import Any, Callable, Optional
 
 from openai import OpenAI
 
+from config.show_config import SHOW_CONFIG
 from show.runtime.events import ShowEvent
 
 # Événements typés : voir ``show.runtime.events.ShowEvent``.
@@ -38,6 +39,14 @@ def emit_event(context: ShowContext, event: dict[str, Any]) -> None:
         context.emit(event)  # type: ignore[arg-type]
 
 
+def internal_model(context: ShowContext) -> str:
+    return context.model_internal or SHOW_CONFIG["model_internal"]
+
+
+def delivery_model(context: ShowContext) -> str:
+    return context.model_delivery or SHOW_CONFIG["model_delivery"]
+
+
 def drain_earpiece(context: ShowContext) -> str:
     """Consigne du producteur en attente dans l'oreillette du modérateur ('' sinon)."""
     if context.poll_earpiece is None:
@@ -51,6 +60,4 @@ def has_earpiece(context: ShowContext) -> bool:
     Source unique pour le routage post-``update_shared_state`` (via
     ``decide_after_update``). Ne pas re-câbler un ``peek`` parallèle sur le graphe.
     """
-    if context.peek_earpiece is not None:
-        return context.peek_earpiece()
-    return False
+    return bool(context.peek_earpiece and context.peek_earpiece())

@@ -6,13 +6,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from config.show_presets import PRESET_KEYS, SHOW_PRESETS, build_guests, get_preset
-from show.graph.guest_subgraph import build_guest_subgraph, needed_nodes, route_concession
+from show.guests.presets import PRESET_KEYS, SHOW_PRESETS, build_guests, get_preset
+from show.guests.subgraph import build_guest_subgraph, needed_nodes, route_concession
 from show.graph.show_graph import build_show_graph
 from show.guests.nodes.factories import route_critic_gate, route_supervisor
-from show.guests.personas.architectures import get_architecture
-from show.personas.architectures import ARCHITECTURES
-from show.personas.registry import DOMAINS, make_guest
+from show.guests.personas.architectures import ARCHITECTURES, get_architecture
+from show.guests.personas.registry import DOMAINS, make_guest
 
 COMMON_TAIL = {"concede_then_refute", "draft", "voice", "deliver"}
 
